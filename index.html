@@ -55,6 +55,34 @@
   #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#222;color:#fff;padding:10px 16px;border-radius:10px;display:none;z-index:30;max-width:90%}
   .list-item{padding:10px 0;border-bottom:1px solid var(--line)}
   .sw{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:middle;margin-right:4px}
+  /* お金・原価 */
+  .seg{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+  .seg button{border:1.5px solid var(--g);background:#fff;color:var(--g);border-radius:99px;padding:8px 14px;font-weight:700;font-size:14px}
+  .seg button.on{background:var(--g);color:#fff}
+  .neg{color:var(--red);font-weight:700} .pos{color:var(--g);font-weight:700}
+  .items td{padding:3px 2px} .items input{padding:7px;font-size:14px}
+  .modal .box.wide{max-width:860px}
+  tr.click{cursor:pointer} tr.click:hover{background:var(--g2)}
+  /* 印刷用(見積書・請求書) */
+  #print{display:none;position:fixed;inset:0;background:#fff;z-index:40;overflow:auto}
+  #print .bar{position:sticky;top:0;background:#f0f0f0;padding:10px;display:flex;gap:8px;justify-content:center}
+  .paper{width:190mm;margin:10mm auto;color:#000;font-size:11pt;line-height:1.5}
+  .paper h1{text-align:center;letter-spacing:12px;font-size:22pt;margin:0 0 8mm;border-bottom:3px double #000;padding-bottom:2mm}
+  .paper .top{display:flex;justify-content:space-between;gap:10mm}
+  .paper .to{font-size:15pt;border-bottom:1px solid #000;padding-bottom:1mm;min-width:85mm}
+  .paper .big{font-size:16pt;font-weight:700;border:2px solid #000;padding:2mm 4mm;display:inline-block;margin:5mm 0}
+  .paper table{border-collapse:collapse;width:100%;margin-top:4mm}
+  .paper th,.paper td{border:1px solid #000;padding:1.5mm 2mm;white-space:normal;font-size:10pt}
+  .paper th{background:#eee;color:#000;text-align:center}
+  .paper .sum td{font-weight:700}
+  .paper .from{text-align:right;font-size:10pt}
+  @media print{
+    body>*:not(#print){display:none!important}
+    #print{display:block!important;position:static}
+    #print .bar{display:none}
+    .paper{margin:0 auto}
+    @page{size:A4;margin:12mm}
+  }
 </style>
 </head>
 <body>
@@ -62,12 +90,13 @@
 <nav id="tabs"></nav>
 <main id="view"><div class="card">読み込み中…</div></main>
 <div id="toast"></div>
+<div id="print"></div>
 
 <script>
 // ======== ここを自分の値に書き換える ========
 const CONFIG = {
   LIFF_ID: '2012496962-JpTTMjvg',                       // 例: 2001234567-AbCdEfGh
-  API_URL:'https://script.google.com/macros/s/AKfycbxd5rbn6381uMURPTG9u-7UMgWtqmxEb3Cm6wck7fdmsTxxlmGHkidy1b0G7Vsl4l-Q/exec',          // 例: https://script.google.com/macros/s/xxxx/exec
+  API_URL: 'https://script.google.com/macros/s/AKfycbxd5rbn6381uMURPTG9u-7UMgWtqmxEb3Cm6wck7fdmsTxxlmGHkidy1b0G7Vsl4l-Q/exec',          // 例: https://script.google.com/macros/s/xxxx/exec
 };
 // ===========================================
 
@@ -132,6 +161,7 @@ const TABS = [
   { id: 'report', label: '日報', perm: 'self' },
   { id: 'mine', label: '自分の記録', perm: 'self' },
   { id: 'agg', label: '集計', perm: 'aggregate' },
+  { id: 'money', label: 'お金・原価', perm: 'money' },
   { id: 'admin', label: '管理', perm: 'edit' },
 ];
 function buildTabs(initial) {
@@ -144,7 +174,7 @@ function show(tab) {
   S.tab = tab; clearInterval(S.timer);
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === tab));
   $('#view').innerHTML = '<div class="card">読み込み中…</div>';
-  ({ home: viewHome, cal: viewCal, report: viewReport, mine: viewMine, agg: viewAgg, admin: viewAdmin })[tab]();
+  ({ home: viewHome, cal: viewCal, report: viewReport, mine: viewMine, agg: viewAgg, money: viewMoney, admin: viewAdmin })[tab]();
 }
 const siteOptions = (sel, includeDone) => S.sites.filter(s => includeDone || s.status !== '完了')
   .map(s => `<option value="${esc(s.siteId)}" ${s.siteId === sel ? 'selected' : ''}>${esc(s.name)}${s.client ? '(' + esc(s.client) + ')' : ''}</option>`).join('');
@@ -335,14 +365,17 @@ async function viewAdmin() {
     </table></div></div>
     ${users ? `<div class="card"><h2>ユーザーと権限(管理者のみ)</h2>
       <p class="muted">新しく登録した人は「承認待ち」です。権限を選ぶと即反映されます。</p>
-      <div class="scroll"><table><tr><th>氏名</th><th>権限</th><th>登録日時</th></tr>
-      ${users.map(u => `<tr><td>${esc(u.name)}${u.userId === S.me.userId ? '(自分)' : ''}</td><td><select data-u="${esc(u.userId)}" style="width:auto">${Object.keys(ROLE).map(k => `<option value="${k}" ${k === u.role ? 'selected' : ''}>${ROLE[k]}</option>`).join('')}</select></td><td>${esc(u.createdAt)}</td></tr>`).join('')}
+      <div class="scroll"><table><tr><th>氏名</th><th>権限</th><th>日当(円)</th><th>登録日時</th></tr>
+      ${users.map(u => `<tr><td>${esc(u.name)}${u.userId === S.me.userId ? '(自分)' : ''}</td><td><select data-u="${esc(u.userId)}" style="width:auto">${Object.keys(ROLE).map(k => `<option value="${k}" ${k === u.role ? 'selected' : ''}>${ROLE[k]}</option>`).join('')}</select></td>
+        <td><input type="number" data-w="${esc(u.userId)}" value="${esc(u.dailyWage || '')}" placeholder="例:18000" style="width:110px"></td><td>${esc(u.createdAt)}</td></tr>`).join('')}
       </table></div>
+      <p class="muted">日当は原価管理の「労務費」(打刻か日報がある日 × 日当)に使います。職人本人には表示されません。</p>
       <h3>権限でできること</h3>
       <p class="muted">管理者:すべて+権限変更 / 事務:案件・予定の編集、集計、全員の日報 / 職長:全員の予定と日報を閲覧、打刻・日報 / 職人:自分の予定・打刻・日報のみ / 停止:利用不可</p></div>` : ''}`;
   $('#sadd').onclick = () => siteForm({});
   document.querySelectorAll('[data-s]').forEach(b => b.onclick = () => siteForm(S.sites.find(s => s.siteId === b.dataset.s)));
   document.querySelectorAll('[data-u]').forEach(sel => sel.onchange = () => run(async () => { await api('setUser', { userId: sel.dataset.u, role: sel.value }); toast('権限を変更しました'); }));
+  document.querySelectorAll('[data-w]').forEach(inp => inp.onchange = () => run(async () => { await api('setUser', { userId: inp.dataset.w, dailyWage: inp.value }); toast('日当を保存しました'); }));
 }
 function siteForm(s) {
   modal(`<h2>${s.siteId ? '案件を編集' : '案件を作成'}</h2>
@@ -360,8 +393,185 @@ function siteForm(s) {
   });
 }
 
+// ---------- お金・原価(管理者・事務のみ) ----------
+const CATS = ['材料費', '外注費', '機械・リース', '運搬・処分費', 'その他'];
+const EST_ST = ['作成中', '提出済', '受注', '失注'], INV_ST = ['未送付', '請求済', '入金済'];
+const pct = v => (v == null ? '—' : v + '%');
+const num = n => Number(n || 0).toLocaleString('ja-JP');
+
+async function viewMoney() {
+  const sub = S.moneySub || 'summary';
+  $('#view').innerHTML = `<div class="seg">${[['summary', '原価管理表'], ['estimates', '見積書'], ['invoices', '請求書'], ['costs', '原価入力']]
+    .map(([k, l]) => `<button data-m="${k}" class="${k === sub ? 'on' : ''}">${l}</button>`).join('')}</div><div id="mview"><div class="card">読み込み中…</div></div>`;
+  document.querySelectorAll('[data-m]').forEach(b => b.onclick = () => { S.moneySub = b.dataset.m; viewMoney(); });
+  if (!S.settings) S.settings = await run(() => api('settings')) || {};
+  ({ summary: moneySummary, estimates: () => docList('estimates'), invoices: () => docList('invoices'), costs: costInput })[sub]();
+}
+
+// 案件別 原価管理表
+async function moneySummary() {
+  const d = await run(() => api('costSummary', { includeDone: !!S.incDone })); if (!d) return;
+  const t = d.totals, C = d.categories;
+  $('#mview').innerHTML = `<div class="card"><div class="calhead"><h2 style="margin:0">案件別 原価管理表</h2>
+      <label style="margin:0;display:flex;gap:6px;align-items:center;color:var(--txt)"><input type="checkbox" id="incd" style="width:auto" ${S.incDone ? 'checked' : ''}>完了案件も表示</label></div>
+    <div class="stats"><div class="stat">売上(税抜)<b>${yen(t.sales)}</b></div><div class="stat">原価合計<b>${yen(t.cost)}</b></div>
+      <div class="stat">粗利<b class="${t.gross < 0 ? 'neg' : ''}">${yen(t.gross)}</b></div><div class="stat">粗利率<b>${pct(t.grossRate)}</b></div>
+      <div class="stat">入金済(税込)<b>${yen(t.paid)}</b></div></div>
+    <p class="muted">売上=「受注」にした見積の合計(受注見積が無い案件は請求の合計)。原価=労務費(打刻か日報がある日×日当、日報だけの日も自動で計上)+日報の経費+原価入力。行をタップすると内訳が出ます。最終更新 ${esc(d.updatedAt)}</p></div>
+    <div class="card"><div class="calhead"><h2 style="margin:0">案件一覧(単位:円)</h2><button class="btn out sm" id="ccsv">CSV</button></div><div class="scroll"><table>
+    <tr><th>案件</th><th>元請</th><th class="n">売上</th><th class="n">労務費</th><th class="n">経費</th>${C.map(c => `<th class="n">${c}</th>`).join('')}
+      <th class="n">原価計</th><th class="n">粗利</th><th class="n">粗利率</th><th class="n">実行予算</th><th class="n">予算消化</th><th class="n">請求済</th><th class="n">入金済</th></tr>
+    ${d.rows.map((r, i) => `<tr class="click" data-i="${i}"><td><span class="sw" style="background:${esc(r.color)}"></span>${esc(r.name)}</td><td>${esc(r.client)}</td>
+      <td class="n">${num(r.sales)}</td><td class="n">${num(r.labor)}</td><td class="n">${num(r.expense)}</td>${C.map(c => `<td class="n">${num(r.cats[c])}</td>`).join('')}
+      <td class="n"><b>${num(r.cost)}</b></td><td class="n ${r.gross < 0 ? 'neg' : 'pos'}">${num(r.gross)}</td><td class="n">${pct(r.grossRate)}</td>
+      <td class="n">${r.budget ? num(r.budget) : '—'}</td><td class="n ${r.budgetRate > 100 ? 'neg' : ''}">${pct(r.budgetRate)}</td><td class="n">${num(r.billed)}</td><td class="n">${num(r.paid)}</td></tr>`).join('')
+      || `<tr><td colspan="${12 + C.length}" class="muted">案件がありません</td></tr>`}
+    </table></div><p class="muted">売上・原価・粗利・請求済は税抜、入金済は税込。予算消化が100%を超えると赤字表示。</p></div>`;
+  $('#incd').onchange = e => { S.incDone = e.target.checked; moneySummary(); };
+  document.querySelectorAll('tr[data-i]').forEach(tr => tr.onclick = () => costDetail(d.rows[Number(tr.dataset.i)], C));
+  $('#ccsv').onclick = () => {
+    TBL.cost = { title: '原価管理表', head: ['案件', '元請', '売上', '労務費', '経費', ...C, '原価計', '粗利', '粗利率(%)', '実行予算', '予算消化(%)', '請求済', '入金済'],
+      rows: d.rows.map(r => [r.name, r.client, r.sales, r.labor, r.expense, ...C.map(c => r.cats[c]), r.cost, r.gross, r.grossRate ?? '', r.budget || '', r.budgetRate ?? '', r.billed, r.paid]) };
+    csv('cost');
+  };
+}
+
+async function costDetail(r, C) {
+  const costs = await run(() => api('costs', { siteId: r.siteId })) || [];
+  modal(`<h2>${esc(r.name)} の原価内訳</h2>
+    <table><tr><th>項目</th><th class="n">金額(円)</th></tr>
+    <tr><td>受注額(受注した見積・税抜)</td><td class="n">${num(r.contract)}</td></tr>
+    <tr><td>請求済(税抜)</td><td class="n">${num(r.billed)}</td></tr>
+    <tr><td>入金済(税込)</td><td class="n">${num(r.paid)}</td></tr>
+    <tr><td>労務費(${r.manDays}人工)</td><td class="n">${num(r.labor)}</td></tr>
+    <tr><td>日報の経費</td><td class="n">${num(r.expense)}</td></tr>
+    ${C.map(c => `<tr><td>${c}</td><td class="n">${num(r.cats[c])}</td></tr>`).join('')}
+    <tr><td><b>原価合計</b></td><td class="n"><b>${num(r.cost)}</b></td></tr>
+    <tr><td><b>粗利</b>(粗利率 ${pct(r.grossRate)})</td><td class="n ${r.gross < 0 ? 'neg' : 'pos'}">${num(r.gross)}</td></tr>
+    <tr><td>実行予算 / 消化率</td><td class="n">${r.budget ? num(r.budget) + ' / ' + pct(r.budgetRate) : '未設定'}</td></tr></table>
+    ${r.noWage ? `<p class="neg" style="font-size:13px">日当が未設定の人の出勤が${r.noWage}件あり、労務費に入っていません(「管理」タブで日当を設定)。</p>` : ''}
+    <h3>原価入力の明細</h3>${costs.length ? `<div class="scroll"><table><tr><th>日付</th><th>費目</th><th>支払先</th><th>内容</th><th class="n">金額</th></tr>
+      ${costs.map(c => `<tr><td>${esc(c.date)}</td><td>${esc(c.category)}</td><td>${esc(c.vendor)}</td><td>${esc(c.content)}</td><td class="n">${num(c.amount)}</td></tr>`).join('')}</table></div>` : '<p class="muted">まだありません</p>'}
+    <div class="row" style="margin-top:12px"><button class="btn" id="cd_add">この案件の原価を入力</button><button class="btn out" onclick="closeModal()">閉じる</button></div>`, true);
+  $('#cd_add').onclick = () => { closeModal(); S.moneySub = 'costs'; S.costSite = r.siteId; viewMoney(); };
+}
+
+// 見積書・請求書の一覧
+async function docList(type) {
+  const isE = type === 'estimates', L = isE ? '見積' : '請求';
+  const list = await run(() => api('docs', { type })) || [];
+  $('#mview').innerHTML = `<div class="card"><div class="calhead"><h2 style="margin:0">${L}書</h2><button class="btn sm" id="dnew">+ ${L}書を作成</button></div>
+    <div class="scroll"><table><tr><th>番号</th><th>${isE ? '発行日' : '請求日'}</th><th>案件</th><th>件名</th><th class="n">合計(税込)</th><th>状態</th><th></th></tr>
+    ${list.map((d, i) => `<tr><td>${esc(d.no)}</td><td>${esc(d.issueDate)}</td><td>${esc(d.siteName)}</td><td>${esc(d.title)}</td><td class="n">${num(d.total)}</td>
+      <td><span class="pill ${['失注', '未送付', '作成中'].includes(d.status) ? 'tmp' : ''}">${esc(d.status)}</span>${d.paidDate ? '<br><span class="muted">入金 ' + esc(d.paidDate) + '</span>' : ''}</td>
+      <td><button class="btn out sm" data-ed="${i}">編集</button> <button class="btn out sm" data-pr="${i}">印刷</button>${isE ? ` <button class="btn out sm" data-inv="${i}">請求書へ</button>` : ''}</td></tr>`).join('')
+      || '<tr><td colspan="7" class="muted">まだありません</td></tr>'}
+    </table></div>
+    <p class="muted">${isE ? '状態を「受注」にすると、その金額が原価管理表の売上になります。「請求書へ」で同じ明細の請求書を作れます。' : '状態を「入金済」にすると入金日が記録され、原価管理表の入金済に入ります。'}</p></div>`;
+  $('#dnew').onclick = () => docForm(type, {});
+  document.querySelectorAll('[data-ed]').forEach(b => b.onclick = () => docForm(type, list[b.dataset.ed]));
+  document.querySelectorAll('[data-pr]').forEach(b => b.onclick = () => printDoc(type, list[b.dataset.pr]));
+  document.querySelectorAll('[data-inv]').forEach(b => b.onclick = () => {
+    if (confirm('この見積書と同じ明細で請求書を作成しますか?')) run(async () => {
+      const inv = await api('invoiceFromEstimate', { id: list[b.dataset.inv].id });
+      toast(`請求書 ${inv.no} を作成しました`); S.moneySub = 'invoices'; viewMoney();
+    });
+  });
+}
+
+// 見積書・請求書の作成/編集
+function docForm(type, d) {
+  const isE = type === 'estimates', L = isE ? '見積' : '請求', ST = isE ? EST_ST : INV_ST;
+  const plus = n => { const x = new Date(); x.setDate(x.getDate() + n); return ymd(x); };
+  const eom = () => { const x = new Date(); return ymd(new Date(x.getFullYear(), x.getMonth() + 2, 0)); };
+  const items = d.items && d.items.length ? d.items : [{ name: '', qty: 1, unit: '式', price: '' }];
+  modal(`<h2>${d.id ? `${L}書を編集(${esc(d.no)})` : `${L}書を作成`}</h2>
+    <div class="row"><div><label>案件 *</label><select id="d_site"><option value="">選択してください</option>${siteOptions(d.siteId, true)}</select></div>
+      <div><label>状態</label><select id="d_st">${ST.map(s => `<option ${s === (d.status || ST[0]) ? 'selected' : ''}>${s}</option>`).join('')}</select></div></div>
+    <p class="muted">宛名は案件の「元請」(未入力なら案件名)になります。</p>
+    <label>件名 *</label><input id="d_title" value="${esc(d.title || '')}" placeholder="例:●●ビル 2F内装解体工事">
+    <div class="row"><div><label>${isE ? '発行日' : '請求日'}</label><input type="date" id="d_date" value="${esc(d.issueDate || ymd(new Date()))}"></div>
+      <div><label>${isE ? '有効期限' : '支払期限'}</label><input type="date" id="d_lim" value="${esc(isE ? (d.validUntil || plus(Number(S.settings['見積の有効期間(日)']) || 30)) : (d.dueDate || eom()))}"></div>
+      <div><label>税率(%)</label><input type="number" id="d_tax" value="${esc(d.taxRate || S.settings['消費税率(%)'] || 10)}"></div></div>
+    ${isE ? '' : `<label>入金日(「入金済」のとき。空欄なら今日)</label><input type="date" id="d_paid" value="${esc(d.paidDate || '')}">`}
+    <h3>明細</h3><div class="scroll"><table class="items"><tr><th>品名・工事内容</th><th style="width:70px">数量</th><th style="width:60px">単位</th><th style="width:110px">単価(税抜)</th><th class="n" style="width:100px">金額</th><th></th></tr>
+      <tbody id="d_items"></tbody></table></div>
+    <button class="btn out sm" id="d_add">+ 行を追加</button>
+    <div id="d_sum" style="text-align:right;margin-top:8px"></div>
+    <label>備考</label><textarea id="d_note">${esc(d.note || '')}</textarea>
+    <div class="row" style="margin-top:14px"><button class="btn" id="d_save">保存</button>${d.id ? '<button class="btn red" id="d_del">削除</button>' : ''}<button class="btn out" onclick="closeModal()">閉じる</button></div>`, true);
+  const tb = $('#d_items');
+  const rowHtml = it => `<tr><td><input class="i_n" value="${esc(it.name || '')}" style="min-width:180px"></td><td><input class="i_q" type="number" step="any" value="${esc(it.qty ?? 1)}"></td>
+    <td><input class="i_u" value="${esc(it.unit || '')}"></td><td><input class="i_p" type="number" step="any" value="${esc(it.price ?? '')}"></td><td class="n i_a"></td><td><button class="btn out sm i_x">×</button></td></tr>`;
+  tb.innerHTML = items.map(rowHtml).join('');
+  const val = (tr, c) => tr.querySelector(c).value;
+  const read = () => [...tb.querySelectorAll('tr')].map(tr => ({ name: val(tr, '.i_n'), qty: val(tr, '.i_q'), unit: val(tr, '.i_u'), price: val(tr, '.i_p') }));
+  const recalc = () => {
+    let sub = 0;
+    tb.querySelectorAll('tr').forEach(tr => { const a = Math.floor((Number(val(tr, '.i_q')) || 0) * (Number(val(tr, '.i_p')) || 0)); sub += a; tr.querySelector('.i_a').textContent = num(a); });
+    const tax = Math.floor(sub * (Number($('#d_tax').value) || 0) / 100);
+    $('#d_sum').innerHTML = `小計 ${yen(sub)} / 消費税 ${yen(tax)} / <b style="font-size:17px">合計 ${yen(sub + tax)}</b>`;
+  };
+  tb.oninput = recalc; $('#d_tax').oninput = recalc;
+  tb.onclick = e => { if (e.target.classList.contains('i_x')) { e.target.closest('tr').remove(); recalc(); } };
+  $('#d_add').onclick = () => { tb.insertAdjacentHTML('beforeend', rowHtml({ qty: 1, unit: '', price: '' })); recalc(); };
+  recalc();
+  $('#d_save').onclick = () => run(async () => {
+    const p = { type, id: d.id, siteId: $('#d_site').value, status: $('#d_st').value, title: $('#d_title').value, issueDate: $('#d_date').value, taxRate: $('#d_tax').value, items: read(), note: $('#d_note').value };
+    if (isE) p.validUntil = $('#d_lim').value; else { p.dueDate = $('#d_lim').value; p.paidDate = $('#d_paid').value; }
+    const saved = await api('saveDoc', p); closeModal(); toast(`${saved.no} を保存しました`); viewMoney();
+  });
+  if ($('#d_del')) $('#d_del').onclick = () => { if (confirm('この書類を削除しますか?')) run(async () => { await api('deleteDoc', { type, id: d.id }); closeModal(); toast('削除しました'); viewMoney(); }); };
+}
+
+// 印刷(ブラウザの印刷 → 「PDFに保存」でPDFにもできる)
+function printDoc(type, d) {
+  const isE = type === 'estimates', c = S.settings || {}, R = 'style="text-align:right"';
+  const rows = d.items.map(i => `<tr><td>${esc(i.name)}</td><td ${R}>${esc(i.qty)}</td><td style="text-align:center">${esc(i.unit)}</td><td ${R}>${num(i.price)}</td><td ${R}>${num(i.amount)}</td></tr>`).join('');
+  const blank = '<tr><td>&nbsp;</td><td></td><td></td><td></td><td></td></tr>'.repeat(Math.max(0, 10 - d.items.length));
+  $('#print').innerHTML = `<div class="bar"><button class="btn" onclick="window.print()">印刷 / PDF保存</button><button class="btn out" onclick="document.getElementById('print').style.display='none'">閉じる</button></div>
+    <div class="paper"><h1>${isE ? '御見積書' : '請求書'}</h1>
+    <div class="top"><div><div class="to">${esc(d.client || d.siteName)} 御中</div>
+      <p>件名:${esc(d.title)}<br>${isE ? '下記の通りお見積り申し上げます。' : '下記の通りご請求申し上げます。'}</p>
+      <div class="big">${isE ? '御見積金額' : 'ご請求金額'} ${yen(d.total)}(税込)</div></div>
+      <div class="from">No. ${esc(d.no)}<br>${isE ? '発行日' : '請求日'}:${esc(d.issueDate)}<br><br><b style="font-size:12pt">${esc(c['会社名'])}</b><br>${esc(c['住所'])}<br>TEL ${esc(c['電話番号'])}<br>登録番号:${esc(c['登録番号(インボイス)'])}</div></div>
+    <table><tr><th>品名・工事内容</th><th style="width:16mm">数量</th><th style="width:14mm">単位</th><th style="width:26mm">単価</th><th style="width:30mm">金額</th></tr>${rows}${blank}
+      <tr class="sum"><td colspan="4" ${R}>小計</td><td ${R}>${num(d.subtotal)}</td></tr>
+      <tr class="sum"><td colspan="4" ${R}>消費税(${esc(d.taxRate)}%対象 ${num(d.subtotal)}円)</td><td ${R}>${num(d.tax)}</td></tr>
+      <tr class="sum"><td colspan="4" ${R}>合計(税込)</td><td ${R}>${num(d.total)}</td></tr></table>
+    <p>${isE ? `有効期限:${esc(d.validUntil || '')}` : `お支払期限:${esc(d.dueDate || '')}<br>お振込先:${esc(c['振込先'])}`}</p>
+    ${d.note ? `<p>備考:<br>${esc(d.note).replace(/\n/g, '<br>')}</p>` : ''}</div>`;
+  $('#print').style.display = 'block';
+}
+
+// 原価入力(材料費・外注費など)
+async function costInput() {
+  const month = S.costMonth || ym(new Date());
+  const list = await run(() => api('costs', { month })) || [];
+  $('#mview').innerHTML = `<div class="card"><h2>原価の入力(材料費・外注費など)</h2>
+    <div class="row"><div><label>日付</label><input type="date" id="c_date" value="${ymd(new Date())}"></div>
+      <div><label>費目</label><select id="c_cat">${CATS.map(c => `<option>${c}</option>`).join('')}</select></div></div>
+    <label>案件 *</label><select id="c_site"><option value="">選択してください</option>${siteOptions(S.costSite, true)}</select>
+    <div class="row"><div><label>支払先</label><input id="c_vendor" placeholder="例:○○建材"></div><div><label>金額(円・税抜) *</label><input type="number" id="c_amt" inputmode="numeric"></div></div>
+    <label>内容</label><input id="c_content" placeholder="例:石膏ボード 50枚">
+    <label>備考</label><input id="c_memo">
+    <button class="btn big" id="c_save">登録する</button>
+    <p class="muted">職人が日報を出すと、その日の労務費と日報の経費(駐車場代など)は自動で原価に入るので、ここでは入力しません。</p></div>
+    <div class="card"><div class="calhead"><h2 style="margin:0">登録済みの原価</h2><input type="month" id="c_m" value="${month}" style="width:auto"></div>
+    <div class="scroll"><table><tr><th>日付</th><th>案件</th><th>費目</th><th>支払先</th><th>内容</th><th class="n">金額</th><th></th></tr>
+    ${list.map(c => `<tr><td>${esc(c.date)}</td><td>${esc(c.siteName)}</td><td>${esc(c.category)}</td><td>${esc(c.vendor)}</td><td>${esc(c.content)}</td><td class="n">${num(c.amount)}</td>
+      <td><button class="btn out sm" data-cd="${esc(c.id)}">削除</button></td></tr>`).join('') || '<tr><td colspan="7" class="muted">この月の登録はありません</td></tr>'}
+    </table></div><p class="muted">この月の合計:${yen(list.reduce((s, c) => s + Number(c.amount || 0), 0))}</p></div>`;
+  $('#c_m').onchange = e => { S.costMonth = e.target.value; costInput(); };
+  $('#c_save').onclick = () => run(async () => {
+    await api('saveCost', { date: $('#c_date').value, category: $('#c_cat').value, siteId: $('#c_site').value, vendor: $('#c_vendor').value, amount: $('#c_amt').value, content: $('#c_content').value, memo: $('#c_memo').value });
+    S.costSite = $('#c_site').value; toast('原価を登録しました'); costInput();
+  });
+  document.querySelectorAll('[data-cd]').forEach(b => b.onclick = () => { if (confirm('この原価を削除しますか?')) run(async () => { await api('deleteCost', { id: b.dataset.cd }); toast('削除しました'); costInput(); }); });
+}
+
 // ---------- モーダル ----------
-function modal(html) { closeModal(); const m = document.createElement('div'); m.className = 'modal'; m.id = 'modal'; m.innerHTML = `<div class="box">${html}</div>`; m.onclick = e => { if (e.target === m) closeModal(); }; document.body.appendChild(m); }
+function modal(html, wide) { closeModal(); const m = document.createElement('div'); m.className = 'modal'; m.id = 'modal'; m.innerHTML = `<div class="box ${wide ? 'wide' : ''}">${html}</div>`; m.onclick = e => { if (e.target === m) closeModal(); }; document.body.appendChild(m); }
 function closeModal() { const m = $('#modal'); if (m) m.remove(); }
 </script>
 </body>
