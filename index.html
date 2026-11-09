@@ -1,5 +1,368 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>現場管理</title>
+<script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<style>
+  :root{--g:#2e6b4f;--g2:#e8f2ec;--line:#e2e6e4;--txt:#1f2a25;--sub:#6b7a72;--red:#d64545;--bg:#f6f8f7}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;color:var(--txt);background:var(--bg);font-size:15px}
+  header{background:var(--g);color:#fff;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:5}
+  header b{font-size:17px} header small{opacity:.85}
+  nav{display:flex;overflow-x:auto;background:#fff;border-bottom:1px solid var(--line);position:sticky;top:46px;z-index:4}
+  nav button{flex:1 0 auto;border:0;background:none;padding:12px 14px;font-size:14px;color:var(--sub);border-bottom:3px solid transparent}
+  nav button.on{color:var(--g);border-color:var(--g);font-weight:700}
+  main{max-width:1100px;margin:0 auto;padding:14px}
+  .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px}
+  h2{font-size:16px;margin:0 0 12px} h3{font-size:14px;margin:16px 0 8px;color:var(--sub)}
+  label{display:block;font-size:13px;color:var(--sub);margin:10px 0 4px}
+  input,select,textarea{width:100%;padding:10px;border:1px solid #cfd8d3;border-radius:8px;font-size:16px;background:#fff}
+  textarea{min-height:90px}
+  .row{display:flex;gap:8px}.row>*{flex:1}
+  .btn{display:inline-block;border:0;border-radius:10px;padding:12px 16px;font-size:15px;font-weight:700;background:var(--g);color:#fff;cursor:pointer}
+  .btn.big{width:100%;padding:18px;font-size:18px;margin-top:8px}
+  .btn.out{background:#fff;color:var(--g);border:1.5px solid var(--g)}
+  .btn.red{background:var(--red)} .btn.sm{padding:7px 12px;font-size:13px}
+  .btn:disabled{opacity:.45}
+  .muted{color:var(--sub);font-size:13px}
+  .pill{display:inline-block;padding:2px 8px;border-radius:99px;font-size:12px;background:var(--g2);color:var(--g);font-weight:700}
+  .pill.tmp{background:#fff4e0;color:#a86400}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{padding:8px 6px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+  th{color:var(--sub);font-weight:600;font-size:12px} td.n,th.n{text-align:right}
+  .scroll{overflow-x:auto}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}
+  .stat{background:var(--g2);border-radius:10px;padding:12px}.stat b{display:block;font-size:22px;color:var(--g)}
+  .clock{font-size:42px;font-weight:700;text-align:center;letter-spacing:2px}
+  /* カレンダー */
+  .calhead{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:8px}
+  .cal{display:grid;grid-template-columns:repeat(7,1fr);border-top:1px solid var(--line);border-left:1px solid var(--line)}
+  .cal div.h{text-align:center;font-size:12px;padding:4px;color:var(--sub);background:#fafbfa}
+  .cal .d{min-height:92px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);padding:3px;font-size:12px;cursor:pointer;background:#fff}
+  .cal div.h,.cal .d{border-right:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .cal .d.other{background:#fafbfa;color:#b5beb9}.cal .d.today .num{background:var(--g);color:#fff;border-radius:99px;padding:0 6px}
+  .ev{color:#fff;border-radius:4px;padding:1px 4px;margin-top:2px;font-size:11px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+  .ev.tmp{opacity:.6;border:1px dashed #fff}
+  .sun{color:var(--red)}.sat{color:#2f6fd6}
+  /* モーダル */
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:flex-end;justify-content:center;z-index:20}
+  .modal .box{background:#fff;width:100%;max-width:560px;max-height:92vh;overflow:auto;border-radius:16px 16px 0 0;padding:18px}
+  @media(min-width:700px){.modal{align-items:center}.modal .box{border-radius:16px}}
+  .chips{display:flex;flex-wrap:wrap;gap:6px}.chips label{display:flex;align-items:center;gap:4px;margin:0;padding:6px 10px;border:1px solid #cfd8d3;border-radius:99px;color:var(--txt);font-size:14px}
+  .chips input{width:auto}
+  #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#222;color:#fff;padding:10px 16px;border-radius:10px;display:none;z-index:30;max-width:90%}
+  .list-item{padding:10px 0;border-bottom:1px solid var(--line)}
+  .sw{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:middle;margin-right:4px}
+</style>
+</head>
+<body>
+<header><b>現場管理</b><small id="who">読み込み中…</small></header>
+<nav id="tabs"></nav>
+<main id="view"><div class="card">読み込み中…</div></main>
+<div id="toast"></div>
+
+<script>
+// ======== ここを自分の値に書き換える ========
 const CONFIG = {
-  LIFF_ID: '2012496962-JpTTMjvg',                                  // STEP3-4のLIFF ID
-  API_URL: 'https://script.google.com/macros/s/AKfycbxd5rbn6381uMURPTG9u-7UMgWtqmxEb3Cm6wck7fdmsTxxlmGHkidy1b0G7Vsl4l-Q/exec 
-',     // STEP2-3のウェブアプリURL
+  LIFF_ID: '2012496962-JpTTMjvg',                       // 例: 2001234567-AbCdEfGh
+  API_URL:'https://script.google.com/macros/s/AKfycbxd5rbn6381uMURPTG9u-7UMgWtqmxEb3Cm6wck7fdmsTxxlmGHkidy1b0G7Vsl4l-Q/exec',          // 例: https://script.google.com/macros/s/xxxx/exec
 };
+// ===========================================
+
+const S = { me: null, sites: [], members: [], tab: 'home', calMonth: ym(new Date()), timer: null };
+const $ = s => document.querySelector(s);
+const esc = v => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const yen = n => Number(n || 0).toLocaleString('ja-JP') + '円';
+function ym(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); }
+function ymd(d) { return ym(d) + '-' + String(d.getDate()).padStart(2, '0'); }
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.style.display = 'block'; clearTimeout(t._h); t._h = setTimeout(() => t.style.display = 'none', 2600); }
+
+// ---------- API ----------
+async function api(action, params = {}) {
+  const res = await fetch(CONFIG.API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // GASのCORS対策(プリフライトを起こさない)
+    body: JSON.stringify({ action, params, idToken: liff.getIDToken() }),
+  });
+  const j = await res.json();
+  if (!j.ok) {
+    if (String(j.error).indexOf('AUTH') === 0) { liff.logout(); liff.login({ redirectUri: location.href }); throw new Error('再ログインします'); }
+    throw new Error(j.error);
+  }
+  return j.data;
+}
+async function run(fn) { try { return await fn(); } catch (e) { toast(e.message); } }
+
+// ---------- 起動 ----------
+(async function init() {
+  try {
+    await liff.init({ liffId: CONFIG.LIFF_ID });
+    if (!liff.isLoggedIn()) { liff.login({ redirectUri: location.href }); return; }
+    const b = await api('bootstrap');
+    S.me = b.me; S.sites = b.sites || []; S.members = b.members || [];
+    $('#who').textContent = S.me.registered ? `${S.me.name}(${S.me.roleLabel})` : '未登録';
+    if (!S.me.registered) return renderRegister();
+    if (S.me.role === 'pending') return renderMessage('管理者の承認待ちです', '管理者が権限を設定すると使えるようになります。しばらくしてから開き直してください。');
+    if (S.me.role === 'disabled') return renderMessage('利用停止中です', '管理者にお問い合わせください。');
+    const q = new URLSearchParams(location.search).get('tab');
+    buildTabs(q);
+  } catch (e) {
+    renderMessage('起動できませんでした', esc(e.message) + '<br>CONFIGのLIFF_ID / API_URL を確認してください。');
+  }
+})();
+
+function renderMessage(title, body) { $('#tabs').innerHTML = ''; $('#view').innerHTML = `<div class="card"><h2>${title}</h2><p>${body}</p></div>`; }
+
+function renderRegister() {
+  $('#view').innerHTML = `<div class="card"><h2>はじめに氏名を登録してください</h2>
+    <label>氏名(フルネーム)</label><input id="rname" placeholder="例:山田 太郎">
+    <button class="btn big" id="rbtn">登録する</button>
+    <p class="muted">登録後、管理者が権限を設定すると使えるようになります。</p></div>`;
+  $('#rbtn').onclick = () => run(async () => {
+    const me = await api('register', { name: $('#rname').value });
+    toast('登録しました'); location.reload(); return me;
+  });
+}
+
+const TABS = [
+  { id: 'home', label: '打刻', perm: 'self' },
+  { id: 'cal', label: '予定', perm: 'self' },
+  { id: 'report', label: '日報', perm: 'self' },
+  { id: 'mine', label: '自分の記録', perm: 'self' },
+  { id: 'agg', label: '集計', perm: 'aggregate' },
+  { id: 'admin', label: '管理', perm: 'edit' },
+];
+function buildTabs(initial) {
+  const tabs = TABS.filter(t => S.me.can[t.perm]);
+  $('#tabs').innerHTML = tabs.map(t => `<button data-t="${t.id}">${t.label}</button>`).join('');
+  $('#tabs').onclick = e => { const t = e.target.dataset.t; if (t) show(t); };
+  show(tabs.some(t => t.id === initial) ? initial : (S.me.can.edit && !liff.isInClient() ? 'cal' : 'home'));
+}
+function show(tab) {
+  S.tab = tab; clearInterval(S.timer);
+  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === tab));
+  $('#view').innerHTML = '<div class="card">読み込み中…</div>';
+  ({ home: viewHome, cal: viewCal, report: viewReport, mine: viewMine, agg: viewAgg, admin: viewAdmin })[tab]();
+}
+const siteOptions = (sel, includeDone) => S.sites.filter(s => includeDone || s.status !== '完了')
+  .map(s => `<option value="${esc(s.siteId)}" ${s.siteId === sel ? 'selected' : ''}>${esc(s.name)}${s.client ? '(' + esc(s.client) + ')' : ''}</option>`).join('');
+
+// ---------- 打刻 ----------
+async function viewHome() {
+  const t = await run(() => api('today')); if (!t) return;
+  const open = t.records.find(r => !r.clockOut);
+  const firstSite = (t.schedules[0] || {}).siteId;
+  $('#view').innerHTML = `
+    <div class="card">
+      <div class="muted" style="text-align:center">${t.date}</div>
+      <div class="clock" id="clk"></div>
+      ${open ? `<p style="text-align:center"><span class="pill">出勤中</span> ${esc(open.clockIn)}〜 ${esc((S.sites.find(s => s.siteId === open.siteId) || {}).name || '')}</p>
+        <button class="btn big red" id="out">退勤する</button>`
+      : `<label>現場</label><select id="site"><option value="">選択してください</option>${siteOptions(firstSite)}</select>
+        <button class="btn big" id="in">出勤する</button>`}
+    </div>
+    <div class="card"><h2>今日の予定</h2>${t.schedules.length ? t.schedules.map(evLine).join('') : '<p class="muted">今日の予定はありません</p>'}</div>
+    <div class="card"><h2>今日の打刻</h2>${t.records.length ? t.records.map(r => `<div class="list-item">${esc(r.clockIn)} 〜 ${esc(r.clockOut || '')} ${r.hours ? '(' + r.hours + 'h)' : ''}</div>`).join('') : '<p class="muted">まだありません</p>'}</div>`;
+  const tick = () => { const n = new Date(); const c = $('#clk'); if (c) c.textContent = n.toTimeString().slice(0, 8); };
+  tick(); S.timer = setInterval(tick, 1000);
+  if ($('#in')) $('#in').onclick = () => run(async () => { await api('clockIn', { siteId: $('#site').value }); toast('出勤しました。今日も一日ご安全に!'); viewHome(); });
+  if ($('#out')) $('#out').onclick = () => run(async () => { const r = await api('clockOut'); toast(`退勤しました(${r.hours}時間)`); viewHome(); });
+}
+function evLine(e) {
+  return `<div class="list-item"><span class="sw" style="background:${esc(e.color)}"></span><b>${esc(e.siteName)}</b> ${esc(e.title)}
+    <span class="pill ${e.status === '仮' ? 'tmp' : ''}">${esc(e.status)}</span><br>
+    <span class="muted">${esc(e.start.replace('T', ' '))} 〜 ${esc(e.end.replace('T', ' '))}${e.address ? ' / ' + esc(e.address) : ''}</span></div>`;
+}
+
+// ---------- 予定(月カレンダー) ----------
+async function viewCal() {
+  const [y, m] = S.calMonth.split('-').map(Number);
+  const first = new Date(y, m - 1, 1), start = new Date(y, m - 1, 1 - first.getDay());
+  const days = [...Array(42)].map((_, i) => new Date(start.getFullYear(), start.getMonth(), start.getDate() + i));
+  const evs = await run(() => api('schedules', { from: ymd(days[0]), to: ymd(days[41]) })) || [];
+  const todayS = ymd(new Date());
+  $('#view').innerHTML = `<div class="card">
+    <div class="calhead">
+      <div><button class="btn out sm" id="prev">‹</button> <b>${y}年${m}月</b> <button class="btn out sm" id="next">›</button> <button class="btn out sm" id="now">今月</button></div>
+      ${S.me.can.edit ? '<button class="btn sm" id="add">+ スケジュール作成</button>' : ''}
+    </div>
+    <div class="cal">${['日', '月', '火', '水', '木', '金', '土'].map((w, i) => `<div class="h ${i === 0 ? 'sun' : i === 6 ? 'sat' : ''}">${w}</div>`).join('')}
+    ${days.map(d => {
+      const ds = ymd(d), list = evs.filter(e => e.start.slice(0, 10) <= ds && e.end.slice(0, 10) >= ds);
+      return `<div class="d ${d.getMonth() !== m - 1 ? 'other' : ''} ${ds === todayS ? 'today' : ''}" data-d="${ds}">
+        <span class="num ${d.getDay() === 0 ? 'sun' : d.getDay() === 6 ? 'sat' : ''}">${d.getDate()}</span>
+        ${list.slice(0, 4).map(e => `<div class="ev ${e.status === '仮' ? 'tmp' : ''}" style="background:${esc(e.color)}" data-id="${esc(e.id)}">${e.status === '仮' ? '仮 ' : ''}${esc(e.siteName)} ${esc(e.title)}</div>`).join('')}
+        ${list.length > 4 ? `<div class="muted">+${list.length - 4}</div>` : ''}</div>`;
+    }).join('')}</div>
+    <p class="muted">予定をタップすると詳細、日付をタップするとその日の一覧が出ます。</p></div>`;
+  $('#prev').onclick = () => { S.calMonth = ym(new Date(y, m - 2, 1)); viewCal(); };
+  $('#next').onclick = () => { S.calMonth = ym(new Date(y, m, 1)); viewCal(); };
+  $('#now').onclick = () => { S.calMonth = ym(new Date()); viewCal(); };
+  if ($('#add')) $('#add').onclick = () => scheduleForm({});
+  document.querySelector('.cal').onclick = e => {
+    const ev = e.target.closest('.ev'), day = e.target.closest('.d');
+    if (ev) return scheduleDetail(evs.find(x => x.id === ev.dataset.id));
+    if (day) {
+      const ds = day.dataset.d, list = evs.filter(x => x.start.slice(0, 10) <= ds && x.end.slice(0, 10) >= ds);
+      modal(`<h2>${ds} の予定</h2>${list.length ? list.map(evLine).join('') : '<p class="muted">予定はありません</p>'}
+        <div class="row" style="margin-top:12px">${S.me.can.edit ? `<button class="btn" id="dadd">この日に追加</button>` : ''}<button class="btn out" onclick="closeModal()">閉じる</button></div>`);
+      if ($('#dadd')) $('#dadd').onclick = () => scheduleForm({ start: ds + 'T08:30', end: ds + 'T17:00' });
+    }
+  };
+}
+function scheduleDetail(e) {
+  modal(`<span class="pill ${e.status === '仮' ? 'tmp' : ''}">${esc(e.status)}</span> <b style="font-size:17px">${esc(e.title)}</b>
+    <h3>案件名</h3>${esc(e.siteName)}${e.client ? '(元請:' + esc(e.client) + ')' : ''}
+    <h3>日時</h3>${esc(e.start.replace('T', ' '))} 〜 ${esc(e.end.replace('T', ' '))}
+    <h3>担当者</h3>${esc(e.assigneeNames.join('、') || 'なし')}
+    ${e.address ? `<h3>住所</h3><a href="https://maps.google.com/?q=${encodeURIComponent(e.address)}" target="_blank">${esc(e.address)}</a>` : ''}
+    ${e.memo ? `<h3>備考</h3>${esc(e.memo)}` : ''}
+    <p class="muted">更新:${esc(e.updatedBy)} ${esc(e.updatedAt)}</p>
+    <div class="row">${S.me.can.edit ? `<button class="btn" id="ed">編集</button><button class="btn red" id="del">削除</button>` : ''}<button class="btn out" onclick="closeModal()">閉じる</button></div>`);
+  if ($('#ed')) $('#ed').onclick = () => scheduleForm(e);
+  if ($('#del')) $('#del').onclick = () => { if (confirm('この予定を削除しますか?')) run(async () => { await api('deleteSchedule', { id: e.id }); closeModal(); toast('削除しました'); viewCal(); }); };
+}
+function scheduleForm(e) {
+  const sd = (e.start || ymd(new Date()) + 'T08:30').split('T'), ed = (e.end || ymd(new Date()) + 'T17:00').split('T');
+  const sel = e.assignees || [];
+  modal(`<h2>${e.id ? '予定を編集' : '新しいスケジュールを作成'}</h2>
+    <label>案件名 *</label><select id="f_site"><option value="">選択してください</option>${siteOptions(e.siteId)}</select>
+    <p class="muted">案件がない場合は「管理」タブで先に登録します。</p>
+    <label>スケジュールタイトル *</label><input id="f_title" value="${esc(e.title || '')}" placeholder="例:解体工事 / 現地調査">
+    <label>予定の管理</label><select id="f_status"><option ${e.status !== '仮' ? 'selected' : ''}>確定</option><option ${e.status === '仮' ? 'selected' : ''}>仮</option></select>
+    <label>開始日時 *</label><div class="row"><input type="date" id="f_sd" value="${sd[0]}"><input type="time" id="f_st" value="${sd[1]}"></div>
+    <label>終了日時 *</label><div class="row"><input type="date" id="f_ed" value="${ed[0]}"><input type="time" id="f_et" value="${ed[1]}"></div>
+    <label>担当者</label><div class="chips">${S.members.map(u => `<label><input type="checkbox" value="${esc(u.userId)}" ${sel.indexOf(u.userId) >= 0 ? 'checked' : ''}>${esc(u.name)}</label>`).join('') || '<span class="muted">登録者がいません</span>'}</div>
+    <label>備考</label><textarea id="f_memo">${esc(e.memo || '')}</textarea>
+    <div class="chips" style="margin-top:10px"><label><input type="checkbox" id="f_notify">担当者にLINEで通知する(月200通の無料枠を消費)</label></div>
+    <div class="row" style="margin-top:14px"><button class="btn" id="f_save">保存</button><button class="btn out" onclick="closeModal()">キャンセル</button></div>`);
+  $('#f_save').onclick = () => run(async () => {
+    await api('saveSchedule', {
+      id: e.id, siteId: $('#f_site').value, title: $('#f_title').value, status: $('#f_status').value,
+      start: $('#f_sd').value + 'T' + $('#f_st').value, end: $('#f_ed').value + 'T' + $('#f_et').value,
+      assignees: [...document.querySelectorAll('.chips input[type=checkbox]:checked')].map(c => c.value).filter(v => v !== 'on'),
+      memo: $('#f_memo').value, notify: $('#f_notify').checked,
+    });
+    closeModal(); toast('保存しました'); viewCal();
+  });
+}
+
+// ---------- 日報 ----------
+async function viewReport() {
+  const month = S.repMonth || ym(new Date());
+  const today = await run(() => api('today')) || { records: [], schedules: [] };
+  const att = today.records[0] || {};
+  const list = await run(() => api('reports', { month })) || [];
+  $('#view').innerHTML = `<div class="card"><h2>日報の提出</h2>
+    <label>報告日 *</label><input type="date" id="r_date" value="${ymd(new Date())}">
+    <label>現場名 *</label><select id="r_site"><option value="">選択してください</option>${siteOptions(att.siteId || (today.schedules[0] || {}).siteId)}</select>
+    <label>入退場時間</label><div class="row"><input type="time" id="r_s" value="${esc(att.clockIn || '08:00')}"><input type="time" id="r_e" value="${esc(att.clockOut || '17:00')}"></div>
+    <label>作業内容 *</label><textarea id="r_c" placeholder="例:2F内装解体、産廃搬出2t車1台"></textarea>
+    <label>経費</label><div class="row"><select id="r_xt"><option value="">なし</option><option>駐車場代</option><option>高速代</option><option>ガソリン代</option><option>材料費</option><option>その他</option></select>
+    <input type="number" id="r_xa" placeholder="金額(円・税抜)" inputmode="numeric"></div>
+    <button class="btn big" id="r_save">保存(提出)</button></div>
+    <div class="card"><div class="calhead"><h2 style="margin:0">${S.me.can.viewAll ? '日報一覧' : '自分の日報'}</h2><input type="month" id="r_m" value="${month}" style="width:auto"></div>
+    <div class="scroll"><table><tr><th>日付</th><th>作成者</th><th>現場</th><th>時間</th><th>作業内容</th><th class="n">経費</th></tr>
+    ${list.map(r => `<tr><td>${esc(r.date)}</td><td>${esc(r.name)}</td><td>${esc(r.siteName)}</td><td>${esc(r.start)}-${esc(r.end)}</td><td style="white-space:normal;min-width:180px">${esc(r.content)}</td><td class="n">${r.expenseAmount ? esc(r.expenseType) + ' ' + yen(r.expenseAmount) : ''}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">まだありません</td></tr>'}
+    </table></div></div>`;
+  $('#r_m').onchange = e => { S.repMonth = e.target.value; viewReport(); };
+  $('#r_save').onclick = () => run(async () => {
+    await api('submitReport', { date: $('#r_date').value, siteId: $('#r_site').value, start: $('#r_s').value, end: $('#r_e').value, content: $('#r_c').value, expenseType: $('#r_xt').value, expenseAmount: $('#r_xa').value });
+    toast('日報を提出しました'); viewReport();
+  });
+}
+
+// ---------- 自分の記録 ----------
+async function viewMine() {
+  const month = S.mineMonth || ym(new Date());
+  const d = await run(() => api('myAttendance', { month })); if (!d) return;
+  $('#view').innerHTML = `<div class="card"><div class="calhead"><h2 style="margin:0">自分の勤務記録</h2><input type="month" id="mm" value="${month}" style="width:auto"></div>
+    <div class="stats"><div class="stat">出勤日数<b>${d.days}日</b></div><div class="stat">労働時間<b>${d.hours}h</b></div></div>
+    <div class="scroll" style="margin-top:12px"><table><tr><th>日付</th><th>現場</th><th>出勤</th><th>退勤</th><th class="n">時間</th></tr>
+    ${d.records.map(r => `<tr><td>${esc(r.date)}</td><td>${esc(r.siteName)}</td><td>${esc(r.clockIn)}</td><td>${esc(r.clockOut || '—')}</td><td class="n">${esc(r.hours)}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">記録がありません</td></tr>'}</table></div></div>`;
+  $('#mm').onchange = e => { S.mineMonth = e.target.value; viewMine(); };
+}
+
+// ---------- 集計(30秒ごと自動更新) ----------
+async function viewAgg() {
+  const month = S.aggMonth || ym(new Date());
+  const load = async () => {
+    const a = await run(() => api('aggregate', { month })); if (!a || S.tab !== 'agg') return;
+    S.lastAgg = a;
+    $('#view').innerHTML = `<div class="card"><div class="calhead"><h2 style="margin:0">${month} の集計</h2><input type="month" id="am" value="${month}" style="width:auto"></div>
+      <div class="stats">
+        <div class="stat">いま現場にいる人<b>${a.totals.onSiteNow}人</b></div>
+        <div class="stat">延べ人工<b>${a.totals.manDays}人工</b></div>
+        <div class="stat">総労働時間<b>${a.totals.hours}h</b></div>
+        <div class="stat">稼働人数<b>${a.totals.workers}人</b></div>
+        <div class="stat">経費合計<b>${yen(a.totals.expense)}</b></div>
+      </div><p class="muted">最終更新 ${esc(a.updatedAt)}(30秒ごとに自動更新)</p></div>
+      ${table('作業員別(勤務日数)', 'workers', ['氏名', '出勤日数', '労働時間(h)', '現場数', '未退勤'], a.workers.map(w => [w.name, w.days, w.hours, w.sites, w.open || '']))}
+      ${table('現場(案件)別', 'sites', ['現場', '元請', '延べ人工', '労働時間(h)', '人数', '経費(円)', '実行予算(円)'], a.sites.map(s => [s.name, s.client, s.manDays, s.hours, s.workers, s.expense, s.budget || '']))}
+      ${table('元請別', 'clients', ['元請', '延べ人工', '労働時間(h)', '現場数', '経費(円)'], a.clients.map(c => [c.client, c.manDays, c.hours, c.sites, c.expense]))}
+      ${table('日別の出勤人数', 'daily', ['日付', '人数'], a.daily.map(d => [d.date, d.people]))}`;
+    $('#am').onchange = e => { S.aggMonth = e.target.value; viewAgg(); };
+    document.querySelectorAll('[data-csv]').forEach(b => b.onclick = () => csv(b.dataset.csv));
+  };
+  await load();
+  clearInterval(S.timer); S.timer = setInterval(load, 30000);
+}
+const TBL = {};
+function table(title, key, head, rows) {
+  TBL[key] = { title, head, rows };
+  return `<div class="card"><div class="calhead"><h2 style="margin:0">${title}</h2><button class="btn out sm" data-csv="${key}">CSV</button></div>
+    <div class="scroll"><table><tr>${head.map((h, i) => `<th class="${i ? 'n' : ''}">${h}</th>`).join('')}</tr>
+    ${rows.map(r => `<tr>${r.map((c, i) => `<td class="${i && typeof c === 'number' ? 'n' : ''}">${typeof c === 'number' && c >= 1000 ? c.toLocaleString() : esc(c)}</td>`).join('')}</tr>`).join('') || `<tr><td colspan="${head.length}" class="muted">データがありません</td></tr>`}
+    </table></div></div>`;
+}
+function csv(key) {
+  const t = TBL[key], body = [t.head, ...t.rows].map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\r\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['﻿' + body], { type: 'text/csv' }));
+  a.download = `${t.title}_${S.aggMonth || ym(new Date())}.csv`; a.click();
+}
+
+// ---------- 管理(案件・ユーザー) ----------
+async function viewAdmin() {
+  S.sites = await run(() => api('sites')) || S.sites;
+  const users = S.me.can.admin ? (await run(() => api('users')) || []) : null;
+  const ROLE = { admin: '管理者', office: '事務', foreman: '職長', worker: '職人', pending: '承認待ち', disabled: '停止' };
+  $('#view').innerHTML = `<div class="card"><div class="calhead"><h2 style="margin:0">案件一覧</h2><button class="btn sm" id="sadd">+ 案件を作成</button></div>
+    <div class="scroll"><table><tr><th>色</th><th>案件名</th><th>元請</th><th>住所</th><th>状態</th><th></th></tr>
+    ${S.sites.map(s => `<tr><td><span class="sw" style="background:${esc(s.color)}"></span></td><td>${esc(s.name)}</td><td>${esc(s.client)}</td><td>${esc(s.address)}</td><td>${esc(s.status)}</td><td><button class="btn out sm" data-s="${esc(s.siteId)}">編集</button></td></tr>`).join('') || '<tr><td colspan="6" class="muted">まだありません</td></tr>'}
+    </table></div></div>
+    ${users ? `<div class="card"><h2>ユーザーと権限(管理者のみ)</h2>
+      <p class="muted">新しく登録した人は「承認待ち」です。権限を選ぶと即反映されます。</p>
+      <div class="scroll"><table><tr><th>氏名</th><th>権限</th><th>登録日時</th></tr>
+      ${users.map(u => `<tr><td>${esc(u.name)}${u.userId === S.me.userId ? '(自分)' : ''}</td><td><select data-u="${esc(u.userId)}" style="width:auto">${Object.keys(ROLE).map(k => `<option value="${k}" ${k === u.role ? 'selected' : ''}>${ROLE[k]}</option>`).join('')}</select></td><td>${esc(u.createdAt)}</td></tr>`).join('')}
+      </table></div>
+      <h3>権限でできること</h3>
+      <p class="muted">管理者:すべて+権限変更 / 事務:案件・予定の編集、集計、全員の日報 / 職長:全員の予定と日報を閲覧、打刻・日報 / 職人:自分の予定・打刻・日報のみ / 停止:利用不可</p></div>` : ''}`;
+  $('#sadd').onclick = () => siteForm({});
+  document.querySelectorAll('[data-s]').forEach(b => b.onclick = () => siteForm(S.sites.find(s => s.siteId === b.dataset.s)));
+  document.querySelectorAll('[data-u]').forEach(sel => sel.onchange = () => run(async () => { await api('setUser', { userId: sel.dataset.u, role: sel.value }); toast('権限を変更しました'); }));
+}
+function siteForm(s) {
+  modal(`<h2>${s.siteId ? '案件を編集' : '案件を作成'}</h2>
+    <label>案件名(現場名) *</label><input id="s_name" value="${esc(s.name || '')}" placeholder="例:●●ビル施工工事">
+    <label>元請</label><input id="s_client" value="${esc(s.client || '')}" placeholder="例:△△建設株式会社">
+    <label>住所</label><input id="s_addr" value="${esc(s.address || '')}">
+    <div class="row"><div><label>色ラベル</label><input type="color" id="s_color" value="${esc(s.color || '#3b82f6')}" style="height:44px"></div>
+    <div><label>状態</label><select id="s_status">${['見積中', '進行中', '完了'].map(v => `<option ${v === (s.status || '進行中') ? 'selected' : ''}>${v}</option>`).join('')}</select></div></div>
+    <label>実行予算(円)</label><input type="number" id="s_budget" value="${esc(s.budget || '')}">
+    <label>備考</label><textarea id="s_memo">${esc(s.memo || '')}</textarea>
+    <div class="row" style="margin-top:14px"><button class="btn" id="s_save">保存</button><button class="btn out" onclick="closeModal()">キャンセル</button></div>`);
+  $('#s_save').onclick = () => run(async () => {
+    await api('saveSite', { siteId: s.siteId, name: $('#s_name').value, client: $('#s_client').value, address: $('#s_addr').value, color: $('#s_color').value, status: $('#s_status').value, budget: $('#s_budget').value, memo: $('#s_memo').value });
+    closeModal(); toast('保存しました'); viewAdmin();
+  });
+}
+
+// ---------- モーダル ----------
+function modal(html) { closeModal(); const m = document.createElement('div'); m.className = 'modal'; m.id = 'modal'; m.innerHTML = `<div class="box">${html}</div>`; m.onclick = e => { if (e.target === m) closeModal(); }; document.body.appendChild(m); }
+function closeModal() { const m = $('#modal'); if (m) m.remove(); }
+</script>
+</body>
+</html>
