@@ -110,15 +110,31 @@
 <div id="print"></div>
 
 <script>
+// 起動の見守り:エラーや長時間の読み込みを画面に表示する(古いスマホでも動く書き方)
+window.__started = false;
+function __showBoot(msg) {
+  var v = document.getElementById('view');
+  if (v) v.innerHTML = '<div class="card"><h2>起動できませんでした</h2><p>' + msg + '</p><p class="muted">LINEの場合は画面を閉じて開き直してください。直らない場合はこの画面を管理者に送ってください。</p></div>';
+}
+window.addEventListener('error', function (e) {
+  if (!window.__started) __showBoot('エラー:' + String(e.message || e.error || '不明').replace(/</g, '&lt;') + '<br>(' + navigator.userAgent.replace(/</g, '&lt;') + ')');
+});
+setTimeout(function () {
+  if (!window.__started) __showBoot('読み込みに30秒以上かかっています。電波の良い場所で開き直してください。<br>(' + navigator.userAgent.replace(/</g, '&lt;') + ')');
+}, 30000);
+</script>
+
+<script>
 // ======== ここを自分の値に書き換える ========
 const CONFIG = {
   LIFF_ID: '2012496962-JpTTMjvg',                       // 例: 2001234567-AbCdEfGh
-  API_URL: ''https://script.google.com/macros/s/AKfycbxd5rbn6381uMURPTG9u-7UMgWtqmxEb3Cm6wck7fdmsTxxlmGHkidy1b0G7Vsl4l-Q/exec',          // 例: https://script.google.com/macros/s/xxxx/exec
+  API_URL: 'https://script.google.com/macros/s/AKfycbxd5rbn6381uMURPTG9u-7UMgWtqmxEb3Cm6wck7fdmsTxxlmGHkidy1b0G7Vsl4l-Q/exec',          // 例: https://script.google.com/macros/s/xxxx/exec
 };
 // ===========================================
 
 const S = { me: null, sites: [], members: [], tab: 'home', calMonth: ym(new Date()), timer: null };
 const $ = s => document.querySelector(s);
+const nz = (v, d) => (v === undefined || v === null ? d : v); // 古いスマホ向け(?? の代わり)
 const esc = v => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const yen = n => Number(n || 0).toLocaleString('ja-JP') + '円';
 function ym(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); }
@@ -127,11 +143,19 @@ function toast(msg) { const t = $('#toast'); t.textContent = msg; t.style.displa
 
 // ---------- API ----------
 async function api(action, params = {}) {
-  const res = await fetch(CONFIG.API_URL, {
+  const ctrl = window.AbortController ? new AbortController() : null;
+  const timer = setTimeout(() => { if (ctrl) ctrl.abort(); }, 40000);
+  let res;
+  try {
+    res = await fetch(CONFIG.API_URL, {
+    signal: ctrl ? ctrl.signal : undefined,
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // GASのCORS対策(プリフライトを起こさない)
     body: JSON.stringify({ action, params, idToken: liff.getIDToken() }),
   });
+  } catch (e) {
+    throw new Error(e && e.name === 'AbortError' ? '通信がタイムアウトしました。電波の良い場所でもう一度お試しください' : '通信できませんでした:' + (e && e.message));
+  } finally { clearTimeout(timer); }
   const j = await res.json();
   if (!j.ok) {
     if (String(j.error).indexOf('AUTH') === 0) { liff.logout(); liff.login({ redirectUri: location.href }); throw new Error('再ログインします'); }
@@ -149,6 +173,7 @@ async function run(fn) { try { return await fn(); } catch (e) { toast(e.message)
     const b = await api('bootstrap');
     S.me = b.me; S.sites = b.sites || []; S.members = b.members || [];
     $('#who').textContent = S.me.registered ? `${S.me.name}(${S.me.roleLabel})` : '未登録';
+    window.__started = true;
     if (!S.me.registered) return renderRegister();
     if (S.me.role === 'pending') return renderMessage('管理者の承認待ちです', '管理者が権限を設定すると使えるようになります。しばらくしてから開き直してください。');
     if (S.me.role === 'disabled') return renderMessage('利用停止中です', '管理者にお問い合わせください。');
@@ -159,7 +184,7 @@ async function run(fn) { try { return await fn(); } catch (e) { toast(e.message)
   }
 })();
 
-function renderMessage(title, body) { $('#tabs').innerHTML = ''; $('#view').innerHTML = `<div class="card"><h2>${title}</h2><p>${body}</p></div>`; }
+function renderMessage(title, body) { window.__started = true; $('#tabs').innerHTML = ''; $('#view').innerHTML = `<div class="card"><h2>${title}</h2><p>${body}</p></div>`; }
 
 function renderRegister() {
   $('#view').innerHTML = `<div class="card"><h2>はじめに氏名を登録してください</h2>
@@ -412,7 +437,7 @@ async function viewAgg() {
           日報の経費は給料に含めません。所得税・社会保険などの控除は含みません。行をタップすると日ごとの内訳が出ます。</p></div>` : ''}
       ${table('作業員別(勤務日数)', 'workers', ['氏名', '出勤日数', '労働時間(h)', '現場数', '未退勤'], a.workers.map(w => [w.name, w.days, w.hours, w.sites, w.open || '']))}
       ${table('現場(案件)別', 'sites', ['現場', '元請', '見積', '請求', '未請求額(円)', '延べ人工', '労働時間(h)', '人数', '経費(円)', '実行予算(円)'],
-        a.sites.map(s => { const x = st[s.siteId] || {}; return [s.name, s.client, x.estStatus ? { html: pill(x.estStatus), text: x.estStatus } : '—', x.billStatus ? { html: pill(x.billStatus), text: x.billStatus } : '—', x.unbilled ?? '', s.manDays, s.hours, s.workers, s.expense, s.budget || '']; }))}
+        a.sites.map(s => { const x = st[s.siteId] || {}; return [s.name, s.client, x.estStatus ? { html: pill(x.estStatus), text: x.estStatus } : '—', x.billStatus ? { html: pill(x.billStatus), text: x.billStatus } : '—', nz(x.unbilled, ''), s.manDays, s.hours, s.workers, s.expense, s.budget || '']; }))}
       ${table('元請別', 'clients', ['元請', '延べ人工', '労働時間(h)', '現場数', '経費(円)'], a.clients.map(c => [c.client, c.manDays, c.hours, c.sites, c.expense]))}
       ${table('日別の出勤人数', 'daily', ['日付', '人数'], a.daily.map(d => [d.date, d.people]))}`;
     $('#am').onchange = e => { S.aggMonth = e.target.value; viewAgg(); };
@@ -562,7 +587,7 @@ async function viewMoney() {
 
 // 見積・請求の状況を色付きで表示
 const PILL = { '見積中': 'tmp', '受注': '', '失注': 'gray', '見積なし': 'gray', '未請求': 'red', '一部請求': 'tmp', '請求済(未入金)': 'blue', '入金済': '', '対象なし': 'gray' };
-const pill = v => `<span class="pill ${PILL[v] ?? 'gray'}">${esc(v)}</span>`;
+const pill = v => `<span class="pill ${nz(PILL[v], 'gray')}">${esc(v)}</span>`;
 const FILTERS = ['見積中', '未請求', '一部請求', '請求済(未入金)', '入金済'];
 const matchFilter = (r, f) => !f || (f === '見積中' ? r.estStatus === f : r.billStatus === f);
 
@@ -598,7 +623,7 @@ async function moneySummary() {
   document.querySelectorAll('tr[data-i]').forEach(tr => tr.onclick = () => costDetail(rows[Number(tr.dataset.i)], C));
   $('#ccsv').onclick = () => {
     TBL.cost = { title: '原価管理表', head: ['案件', '元請', '区分', '見積', '請求', '未請求額', '未入金額', '人工', '売上', '売上の根拠', '労務費', '経費', ...C, '原価計', '粗利', '粗利率(%)', '実行予算', '予算消化(%)', '請求済', '入金済'],
-      rows: rows.map(r => [r.name, r.client, r.contractType, r.estStatus, r.billStatus, r.unbilled, r.unpaid, r.manDays, r.sales, r.basis, r.labor, r.expense, ...C.map(c => r.cats[c]), r.cost, r.gross, r.grossRate ?? '', r.budget || '', r.budgetRate ?? '', r.billed, r.paid]) };
+      rows: rows.map(r => [r.name, r.client, r.contractType, r.estStatus, r.billStatus, r.unbilled, r.unpaid, r.manDays, r.sales, r.basis, r.labor, r.expense, ...C.map(c => r.cats[c]), r.cost, r.gross, nz(r.grossRate, ''), r.budget || '', nz(r.budgetRate, ''), r.billed, r.paid]) };
     csv('cost');
   };
 }
@@ -680,8 +705,8 @@ function docForm(type, d) {
     <label>備考</label><textarea id="d_note">${esc(d.note || '')}</textarea>
     <div class="row" style="margin-top:14px"><button class="btn" id="d_save">保存</button>${d.id ? '<button class="btn red" id="d_del">削除</button>' : ''}<button class="btn out" onclick="closeModal()">閉じる</button></div>`, true);
   const tb = $('#d_items');
-  const rowHtml = it => `<tr><td><input class="i_n" value="${esc(it.name || '')}" style="min-width:180px"></td><td><input class="i_q" type="number" step="any" value="${esc(it.qty ?? 1)}"></td>
-    <td><input class="i_u" value="${esc(it.unit || '')}"></td><td><input class="i_p" type="number" step="any" value="${esc(it.price ?? '')}"></td><td class="n i_a"></td><td><button class="btn out sm i_x">×</button></td></tr>`;
+  const rowHtml = it => `<tr><td><input class="i_n" value="${esc(it.name || '')}" style="min-width:180px"></td><td><input class="i_q" type="number" step="any" value="${esc(nz(it.qty, 1))}"></td>
+    <td><input class="i_u" value="${esc(it.unit || '')}"></td><td><input class="i_p" type="number" step="any" value="${esc(nz(it.price, ''))}"></td><td class="n i_a"></td><td><button class="btn out sm i_x">×</button></td></tr>`;
   tb.innerHTML = items.map(rowHtml).join('');
   const val = (tr, c) => tr.querySelector(c).value;
   const read = () => [...tb.querySelectorAll('tr')].map(tr => ({ name: val(tr, '.i_n'), qty: val(tr, '.i_q'), unit: val(tr, '.i_u'), price: val(tr, '.i_p') }));
