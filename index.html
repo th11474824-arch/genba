@@ -113,7 +113,7 @@
 // ======== ここを自分の値に書き換える ========
 const CONFIG = {
   LIFF_ID: '2012496962-JpTTMjvg',                       // 例: 2001234567-AbCdEfGh
-  API_URL: 'https://script.google.com/macros/s/AKfycbxd5rbn6381uMURPTG9u-7UMgWtqmxEb3Cm6wck7fdmsTxxlmGHkidy1b0G7Vsl4l-Q/exec',          // 例: https://script.google.com/macros/s/xxxx/exec
+  API_URL: ''https://script.google.com/macros/s/AKfycbxd5rbn6381uMURPTG9u-7UMgWtqmxEb3Cm6wck7fdmsTxxlmGHkidy1b0G7Vsl4l-Q/exec',          // 例: https://script.google.com/macros/s/xxxx/exec
 };
 // ===========================================
 
@@ -177,6 +177,7 @@ const TABS = [
   { id: 'cal', label: '予定', perm: 'self' },
   { id: 'report', label: '日報', perm: 'self' },
   { id: 'mine', label: '自分の記録', perm: 'self' },
+  { id: 'advance', label: '前払い', perm: 'self' },
   { id: 'agg', label: '集計', perm: 'aggregate' },
   { id: 'money', label: 'お金・原価', perm: 'money' },
   { id: 'admin', label: '管理', perm: 'edit' },
@@ -191,7 +192,7 @@ function show(tab) {
   S.tab = tab; clearInterval(S.timer);
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === tab));
   $('#view').innerHTML = '<div class="card">読み込み中…</div>';
-  ({ home: viewHome, cal: viewCal, report: viewReport, mine: viewMine, agg: viewAgg, money: viewMoney, admin: viewAdmin })[tab]();
+  ({ home: viewHome, cal: viewCal, report: viewReport, mine: viewMine, advance: viewAdvance, agg: viewAgg, money: viewMoney, admin: viewAdmin })[tab]();
 }
 const siteOptions = (sel, includeDone) => S.sites.filter(s => includeDone || s.status !== '完了')
   .map(s => `<option value="${esc(s.siteId)}" ${s.siteId === sel ? 'selected' : ''}>${esc(s.name)}${s.client ? '(' + esc(s.client) + ')' : ''}</option>`).join('');
@@ -323,8 +324,10 @@ async function viewReport() {
   const list = await run(() => api('reports', { month })) || [];
   $('#view').innerHTML = `<div class="card"><h2>日報の提出</h2>
     <label>報告日 *</label><input type="date" id="r_date" value="${ymd(new Date())}">
-    <label>現場名 *</label><select id="r_site"><option value="">選択してください</option>${siteOptions(att.siteId || (today.schedules[0] || {}).siteId)}</select>
+    <label>作業区分 *</label><div class="seg" id="r_type" style="margin-bottom:0"><button type="button" data-wt="現場" class="on">現場</button><button type="button" data-wt="加工">加工</button></div>
+    <label>案件(現場名) *</label><select id="r_site"><option value="">選択してください</option>${siteOptions(att.siteId || (today.schedules[0] || {}).siteId)}</select>
     <label>入退場時間</label><div class="row"><input type="time" id="r_s" value="${esc(att.clockIn || '08:00')}"><input type="time" id="r_e" value="${esc(att.clockOut || '17:00')}"></div>
+    <div class="row"><div><label>通常残業</label><select id="r_ot">${[0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8].map(v => `<option value="${v}">${v ? v + '時間' : 'なし'}</option>`).join('')}</select></div><div><label>深夜残業(22時〜翌5時)</label><select id="r_nt">${[0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8].map(v => `<option value="${v}">${v ? v + '時間' : 'なし'}</option>`).join('')}</select></div></div>
     <label>作業内容 *</label><textarea id="r_c" placeholder="例:2F内装解体、産廃搬出2t車1台"></textarea>
     <label>経費</label><div class="row"><select id="r_xt"><option value="">なし</option><option>駐車場代</option><option>高速代</option><option>ガソリン代</option><option>材料費</option><option>その他</option></select>
     <input type="number" id="r_xa" placeholder="金額(円・税抜)" inputmode="numeric"></div>
@@ -332,12 +335,13 @@ async function viewReport() {
       <div class="chips" id="r_workers">${S.members.filter(u => u.userId !== S.me.userId).map(u => `<label><input type="checkbox" value="${esc(u.userId)}">${esc(u.name)}</label>`).join('') || '<span class="muted">他の作業員がいません</span>'}</div>
       <div class="row" style="margin-top:6px"><button class="btn out sm" id="r_all" type="button">全員選択</button><button class="btn out sm" id="r_none" type="button">選択解除</button></div>
       <div class="chips" style="margin-top:8px"><label><input type="checkbox" id="r_self" checked>自分の日報も提出する</label></div>
-      <p class="muted">作業内容と時間は全員同じ内容で登録されます。経費は提出者1人分だけに付きます。今日の予定の担当者は最初からチェックされます。</p>` : ''}
+      <p class="muted">作業内容・時間・残業は全員同じ内容で登録されます。経費は提出者1人分だけに付きます。今日の予定の担当者は最初からチェックされます。</p>` : ''}
     <button class="btn big" id="r_save">保存(提出)</button></div>
     <div class="card"><div class="calhead"><h2 style="margin:0">${S.me.can.viewAll ? '日報一覧' : '自分の日報'}</h2><input type="month" id="r_m" value="${month}" style="width:auto"></div>
-    <div class="scroll"><table><tr><th>日付</th><th>作成者</th><th>現場</th><th>時間</th><th>作業内容</th><th class="n">経費</th></tr>
-    ${list.map(r => `<tr><td>${esc(r.date)}</td><td>${esc(r.name)}${r.submittedBy ? `<br><span class="muted" style="font-size:11px">${esc(r.submittedBy)}が代理提出</span>` : ''}</td><td>${esc(r.siteName)}</td><td>${esc(r.start)}-${esc(r.end)}</td><td style="white-space:normal;min-width:180px">${esc(r.content)}</td><td class="n">${r.expenseAmount ? esc(r.expenseType) + ' ' + yen(r.expenseAmount) : ''}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">まだありません</td></tr>'}
+    <div class="scroll"><table><tr><th>日付</th><th>作成者</th><th>区分</th><th>現場</th><th>時間</th><th>残業</th><th>作業内容</th><th class="n">経費</th></tr>
+    ${list.map(r => `<tr><td>${esc(r.date)}</td><td>${esc(r.name)}${r.submittedBy ? `<br><span class="muted" style="font-size:11px">${esc(r.submittedBy)}が代理提出</span>` : ''}</td><td><span class="pill ${r.workType === '加工' ? 'blue' : ''}">${esc(r.workType || '現場')}</span></td><td>${esc(r.siteName)}</td><td>${esc(r.start)}-${esc(r.end)}</td><td>${r.otHours ? '通常' + esc(r.otHours) + 'h' : ''}${r.otHours && r.nightHours ? '<br>' : ''}${r.nightHours ? '深夜' + esc(r.nightHours) + 'h' : ''}</td><td style="white-space:normal;min-width:180px">${esc(r.content)}</td><td class="n">${r.expenseAmount ? esc(r.expenseType) + ' ' + yen(r.expenseAmount) : ''}</td></tr>`).join('') || '<tr><td colspan="8" class="muted">まだありません</td></tr>'}
     </table></div></div>`;
+  document.querySelectorAll('[data-wt]').forEach(b => b.onclick = () => document.querySelectorAll('[data-wt]').forEach(x => x.classList.toggle('on', x === b)));
   $('#r_m').onchange = e => { S.repMonth = e.target.value; viewReport(); };
   // 代理提出:選んだ現場の「今日の予定」の担当者を自動でチェック
   const preset = () => {
@@ -353,8 +357,8 @@ async function viewReport() {
   $('#r_save').onclick = () => run(async () => {
     const workerIds = [...document.querySelectorAll('#r_workers input:checked')].map(c => c.value);
     const r = await api('submitReport', { date: $('#r_date').value, siteId: $('#r_site').value, start: $('#r_s').value, end: $('#r_e').value, content: $('#r_c').value, expenseType: $('#r_xt').value, expenseAmount: $('#r_xa').value,
-      workerIds, includeSelf: $('#r_self') ? $('#r_self').checked : true });
-    toast(`${r.count}人分の日報を提出しました` + (r.skipped.length ? `(提出済みなどで除外:${r.skipped.join('、')})` : ''));
+      workerIds, includeSelf: $('#r_self') ? $('#r_self').checked : true, workType: document.querySelector('[data-wt].on').dataset.wt, otHours: $('#r_ot').value, nightHours: $('#r_nt').value });
+    toast(`${r.count}人分の日報(${document.querySelector('[data-wt].on').dataset.wt})を提出しました` + (r.skipped.length ? `(提出済みなどで除外:${r.skipped.join('、')})` : ''));
     viewReport();
   });
 }
@@ -378,6 +382,10 @@ async function viewAgg() {
     // 案件ごとの見積・請求の状況(お金の権限がある人だけ)
     const cs = S.me.can.money ? await run(() => api('costSummary', { includeDone: true })) : null;
     const st = {}; (cs ? cs.rows : []).forEach(r => { st[r.siteId] = r; });
+    // 給料計算と前払いの承認待ち(お金の権限がある人だけ)
+    const pr = S.me.can.money ? await run(() => api('payroll', { month })) : null;
+    const pend = S.me.can.money ? await run(() => api('advances', { status: '申請中' })) || [] : [];
+    S.pendAdv = pend;
     S.lastAgg = a;
     $('#view').innerHTML = `<div class="card"><div class="calhead"><h2 style="margin:0">${month} の集計</h2><input type="month" id="am" value="${month}" style="width:auto"></div>
       <div class="stats">
@@ -387,6 +395,21 @@ async function viewAgg() {
         <div class="stat">稼働人数<b>${a.totals.workers}人</b></div>
         <div class="stat">経費合計<b>${yen(a.totals.expense)}</b></div>
       </div><p class="muted">最終更新 ${esc(a.updatedAt)}(30秒ごとに自動更新)</p></div>
+      ${pend.length ? `<div class="card" style="border:2px solid #f0b429"><h2>前払い申請 承認待ち(${pend.length}件)</h2>
+        <div class="scroll"><table><tr><th>申請日</th><th>氏名</th><th class="n">金額</th><th>理由</th><th></th></tr>
+        ${pend.map((v, i) => `<tr><td>${esc(v.date)}</td><td>${esc(v.name)}</td><td class="n">${num(v.amount)}円</td><td style="white-space:normal">${esc(v.reason)}</td>
+          <td><button class="btn sm" data-adv="${i}">確認する</button></td></tr>`).join('')}</table></div></div>` : ''}
+      ${pr ? `<div class="card"><div class="calhead"><h2 style="margin:0">給料計算(${month})</h2><button class="btn out sm" id="paycsv">CSV</button></div>
+        <div class="stats"><div class="stat">基本給 合計<b>${yen(pr.totals.base)}</b></div><div class="stat">残業代 合計<b>${yen(pr.totals.otPay + pr.totals.nightPay)}</b></div>
+          <div class="stat">総支給 合計<b>${yen(pr.totals.gross)}</b></div><div class="stat">前払い 合計<b>${yen(pr.totals.advance)}</b></div><div class="stat">差引支給額 合計<b>${yen(pr.totals.net)}</b></div></div>
+        <div class="scroll" style="margin-top:10px"><table><tr><th>氏名</th><th class="n">出勤日数</th><th class="n">日当</th><th class="n">基本給</th><th class="n">残業</th><th class="n">残業代</th><th class="n">深夜残業</th><th class="n">深夜残業代</th><th class="n">総支給</th><th class="n">前払い</th><th class="n">差引支給額</th></tr>
+        ${pr.rows.map((r, i) => `<tr class="click" data-pay="${i}"><td>${esc(r.name)}</td><td class="n">${r.days}日</td><td class="n ${r.noWage ? 'neg' : ''}">${r.noWage ? '未設定' : num(r.wage)}</td><td class="n">${num(r.base)}</td>
+          <td class="n">${r.otHours}h</td><td class="n">${num(r.otPay)}</td><td class="n">${r.nightHours}h</td><td class="n">${num(r.nightPay)}</td><td class="n">${num(r.gross)}</td>
+          <td class="n">${r.advance ? '−' + num(r.advance) + (r.advCount > 1 ? `<br><span class="muted" style="font-size:11px">${r.advCount}回</span>` : '') : '0'}</td>
+          <td class="n"><b class="${r.net < 0 ? 'neg' : ''}">${num(r.net)}</b></td></tr>`).join('') || '<tr><td colspan="11" class="muted">この月の勤務はありません</td></tr>'}</table></div>
+        <p class="muted">基本給=出勤日数(打刻か日報がある日)×日当。残業・深夜残業=日報で選んだ時間の合計。
+          残業単価=日当÷${pr.rule.std}×${pr.rule.rate}、深夜残業単価=日当÷${pr.rule.std}×${pr.rule.nightRate}。
+          日報の経費は給料に含めません。所得税・社会保険などの控除は含みません。行をタップすると日ごとの内訳が出ます。</p></div>` : ''}
       ${table('作業員別(勤務日数)', 'workers', ['氏名', '出勤日数', '労働時間(h)', '現場数', '未退勤'], a.workers.map(w => [w.name, w.days, w.hours, w.sites, w.open || '']))}
       ${table('現場(案件)別', 'sites', ['現場', '元請', '見積', '請求', '未請求額(円)', '延べ人工', '労働時間(h)', '人数', '経費(円)', '実行予算(円)'],
         a.sites.map(s => { const x = st[s.siteId] || {}; return [s.name, s.client, x.estStatus ? { html: pill(x.estStatus), text: x.estStatus } : '—', x.billStatus ? { html: pill(x.billStatus), text: x.billStatus } : '—', x.unbilled ?? '', s.manDays, s.hours, s.workers, s.expense, s.budget || '']; }))}
@@ -394,10 +417,74 @@ async function viewAgg() {
       ${table('日別の出勤人数', 'daily', ['日付', '人数'], a.daily.map(d => [d.date, d.people]))}`;
     $('#am').onchange = e => { S.aggMonth = e.target.value; viewAgg(); };
     document.querySelectorAll('[data-csv]').forEach(b => b.onclick = () => csv(b.dataset.csv));
+    document.querySelectorAll('[data-adv]').forEach(b => b.onclick = () => advanceDecide(S.pendAdv[Number(b.dataset.adv)]));
+    if ($('#paycsv')) $('#paycsv').onclick = () => {
+      TBL.pay = { title: '給料計算', head: ['氏名', '出勤日数', '日当', '基本給', '残業(h)', '残業単価', '残業代', '深夜残業(h)', '深夜残業単価', '深夜残業代', '総支給', '前払い', '差引支給額'],
+        rows: pr.rows.map(r => [r.name, r.days, r.wage, r.base, r.otHours, r.otUnit, r.otPay, r.nightHours, r.nightUnit, r.nightPay, r.gross, r.advance, r.net]) };
+      csv('pay');
+    };
+    document.querySelectorAll('[data-pay]').forEach(tr => tr.onclick = () => payDetail(pr.rows[Number(tr.dataset.pay)], month));
   };
   await load();
   clearInterval(S.timer); S.timer = setInterval(load, 30000);
 }
+// 給料の日ごとの内訳
+function payDetail(r, month) {
+  modal(`<h2>${esc(r.name)} さんの給料内訳(${esc(month)})</h2>
+    <table><tr><td>基本給(${r.days}日 × ${num(r.wage)}円)</td><td class="n">${num(r.base)}</td></tr>
+    <tr><td>残業代(${r.otHours}h × ${num(r.otUnit)}円)</td><td class="n">${num(r.otPay)}</td></tr>
+    <tr><td>深夜残業代(${r.nightHours}h × ${num(r.nightUnit)}円)</td><td class="n">${num(r.nightPay)}</td></tr>
+    <tr><td><b>総支給</b></td><td class="n"><b>${num(r.gross)}</b></td></tr>
+    <tr><td>前払い</td><td class="n">−${num(r.advance)}</td></tr>
+    <tr><td><b>差引支給額</b></td><td class="n"><b>${num(r.net)}</b></td></tr></table>
+    <p class="muted">単価は表示用に円未満を四捨五入しています。残業代は時間の合計 × 正確な単価で計算します。</p>
+    <h3>残業のあった日(日報より)</h3><div class="scroll"><table><tr><th>日付</th><th>区分</th><th>現場</th><th>入退場</th><th class="n">通常残業(h)</th><th class="n">深夜残業(h)</th></tr>
+    ${r.details.map(d => `<tr><td>${esc(d.date)}</td><td>${esc(d.workType)}</td><td>${esc(d.site)}</td><td>${esc(d.times)}</td><td class="n">${d.ot || ''}</td><td class="n">${d.night || ''}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">この月の残業はありません</td></tr>'}</table></div>
+    <div class="row" style="margin-top:12px"><button class="btn out" onclick="closeModal()">閉じる</button></div>`, true);
+}
+
+// 前払いの承認・却下(管理者・事務)
+function advanceDecide(v) {
+  modal(`<h2>前払い申請の確認</h2>
+    <p><b>${esc(v.name)}</b> さん / 申請日 ${esc(v.date)}<br>理由:${esc(v.reason || '(なし)')}</p>
+    <label>承認する金額(円)… 減額する場合は書き換え</label><input type="number" id="av_amt" value="${esc(v.amount)}">
+    <label>差し引く月</label><input type="month" id="av_m" value="${esc(v.payMonth)}">
+    <label>メモ(本人に通知されます)</label><input id="av_memo" placeholder="例:今月の給料日に精算します">
+    <div class="row" style="margin-top:14px"><button class="btn" id="av_ok">承認</button><button class="btn red" id="av_ng">却下</button><button class="btn out" onclick="closeModal()">閉じる</button></div>
+    <p class="muted">承認・却下すると本人のLINEに通知されます(無料枠1通)。</p>`);
+  const go = decision => run(async () => {
+    await api('decideAdvance', { id: v.id, decision, amount: $('#av_amt').value, payMonth: $('#av_m').value, memo: $('#av_memo').value });
+    closeModal(); toast(decision === '承認' ? '承認しました。給料計算から差し引かれます' : '却下しました'); viewAgg();
+  });
+  $('#av_ok').onclick = () => go('承認');
+  $('#av_ng').onclick = () => { if (confirm('この申請を却下しますか?')) go('却下'); };
+}
+
+// ---------- 前払い申請(作業員) ----------
+async function viewAdvance() {
+  const list = await run(() => api('myAdvances')) || [];
+  const m = ym(new Date());
+  const thisMonth = list.filter(a => a.status === '承認' && a.payMonth === m).reduce((t, a) => t + Number(a.amount || 0), 0);
+  $('#view').innerHTML = `<div class="card"><h2>前払いの申請</h2>
+    <label>金額(円) *</label><input type="number" id="ad_amt" inputmode="numeric" placeholder="例:30000">
+    <label>理由</label><input id="ad_reason" placeholder="例:生活費のため">
+    <button class="btn big" id="ad_go">申請する</button>
+    <p class="muted">管理者が承認すると、その月の給料から差し引かれます。結果はLINEでお知らせします。</p></div>
+    <div class="card"><h2>申請の履歴</h2>
+    <div class="stats"><div class="stat">今月差し引かれる前払い<b>${yen(thisMonth)}</b></div></div>
+    <div class="scroll" style="margin-top:10px"><table><tr><th>申請日</th><th class="n">金額</th><th>状態</th><th>差引月</th><th></th></tr>
+    ${list.map(a => `<tr><td>${esc(a.date)}</td><td class="n">${num(a.amount)}円</td>
+      <td><span class="pill ${a.status === '申請中' ? 'tmp' : a.status === '却下' ? 'red' : ''}">${esc(a.status)}</span>${a.memo ? `<br><span class="muted" style="font-size:11px">${esc(a.memo)}</span>` : ''}</td>
+      <td>${a.status === '承認' ? esc(a.payMonth) : ''}</td><td>${a.status === '申請中' ? `<button class="btn out sm" data-cx="${esc(a.id)}">取消</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">まだありません</td></tr>'}
+    </table></div></div>`;
+  $('#ad_go').onclick = () => run(async () => {
+    if (!confirm(`${num($('#ad_amt').value)}円の前払いを申請しますか?`)) return;
+    await api('requestAdvance', { amount: $('#ad_amt').value, reason: $('#ad_reason').value });
+    toast('申請しました。承認をお待ちください'); viewAdvance();
+  });
+  document.querySelectorAll('[data-cx]').forEach(b => b.onclick = () => { if (confirm('この申請を取り消しますか?')) run(async () => { await api('cancelAdvance', { id: b.dataset.cx }); toast('取り消しました'); viewAdvance(); }); });
+}
+
 const TBL = {};
 function table(title, key, head, rows) {
   TBL[key] = { title, head, rows };
