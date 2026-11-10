@@ -360,8 +360,8 @@ async function viewAdmin() {
   const users = S.me.can.admin ? (await run(() => api('users')) || []) : null;
   const ROLE = { admin: '管理者', office: '事務', foreman: '職長', worker: '職人', pending: '承認待ち', disabled: '停止' };
   $('#view').innerHTML = `<div class="card"><div class="calhead"><h2 style="margin:0">案件一覧</h2><button class="btn sm" id="sadd">+ 案件を作成</button></div>
-    <div class="scroll"><table><tr><th>色</th><th>案件名</th><th>元請</th><th>住所</th><th>状態</th><th></th></tr>
-    ${S.sites.map(s => `<tr><td><span class="sw" style="background:${esc(s.color)}"></span></td><td>${esc(s.name)}</td><td>${esc(s.client)}</td><td>${esc(s.address)}</td><td>${esc(s.status)}</td><td><button class="btn out sm" data-s="${esc(s.siteId)}">編集</button></td></tr>`).join('') || '<tr><td colspan="6" class="muted">まだありません</td></tr>'}
+    <div class="scroll"><table><tr><th>色</th><th>案件名</th><th>元請</th><th>区分</th><th>住所</th><th>状態</th><th></th></tr>
+    ${S.sites.map(s => `<tr><td><span class="sw" style="background:${esc(s.color)}"></span></td><td>${esc(s.name)}</td><td>${esc(s.client)}</td><td>${esc(s.contractType || '請負')}${s.contractType === '常用' && s.unitPrice ? '<br><span class="muted">' + num(s.unitPrice) + '円/人工</span>' : ''}</td><td>${esc(s.address)}</td><td>${esc(s.status)}</td><td><button class="btn out sm" data-s="${esc(s.siteId)}">編集</button></td></tr>`).join('') || '<tr><td colspan="7" class="muted">まだありません</td></tr>'}
     </table></div></div>
     ${users ? `<div class="card"><h2>ユーザーと権限(管理者のみ)</h2>
       <p class="muted">新しく登録した人は「承認待ち」です。権限を選ぶと即反映されます。</p>
@@ -384,11 +384,17 @@ function siteForm(s) {
     <label>住所</label><input id="s_addr" value="${esc(s.address || '')}">
     <div class="row"><div><label>色ラベル</label><input type="color" id="s_color" value="${esc(s.color || '#3b82f6')}" style="height:44px"></div>
     <div><label>状態</label><select id="s_status">${['見積中', '進行中', '完了'].map(v => `<option ${v === (s.status || '進行中') ? 'selected' : ''}>${v}</option>`).join('')}</select></div></div>
+    <label>契約区分</label><select id="s_type">${['請負', '常用'].map(v => `<option ${v === (s.contractType || '請負') ? 'selected' : ''}>${v}</option>`).join('')}</select>
+    <div id="s_ukeoi"><label>請負契約金額(円・税抜)</label><input type="number" id="s_amount" value="${esc(s.contractAmount || '')}" placeholder="空欄なら「受注」見積の合計を売上にします"></div>
+    <div id="s_jouyou"><label>常用単価(円/1人工・税抜)</label><input type="number" id="s_unit" value="${esc(s.unitPrice || '')}" placeholder="例:25000"></div>
     <label>実行予算(円)</label><input type="number" id="s_budget" value="${esc(s.budget || '')}">
     <label>備考</label><textarea id="s_memo">${esc(s.memo || '')}</textarea>
     <div class="row" style="margin-top:14px"><button class="btn" id="s_save">保存</button><button class="btn out" onclick="closeModal()">キャンセル</button></div>`);
+  const toggle = () => { const j = $('#s_type').value === '常用'; $('#s_jouyou').style.display = j ? '' : 'none'; $('#s_ukeoi').style.display = j ? 'none' : ''; };
+  $('#s_type').onchange = toggle; toggle();
   $('#s_save').onclick = () => run(async () => {
-    await api('saveSite', { siteId: s.siteId, name: $('#s_name').value, client: $('#s_client').value, address: $('#s_addr').value, color: $('#s_color').value, status: $('#s_status').value, budget: $('#s_budget').value, memo: $('#s_memo').value });
+    await api('saveSite', { siteId: s.siteId, name: $('#s_name').value, client: $('#s_client').value, address: $('#s_addr').value, color: $('#s_color').value, status: $('#s_status').value, budget: $('#s_budget').value, memo: $('#s_memo').value,
+      contractType: $('#s_type').value, unitPrice: $('#s_unit').value, contractAmount: $('#s_amount').value });
     closeModal(); toast('保存しました'); viewAdmin();
   });
 }
@@ -417,29 +423,36 @@ async function moneySummary() {
     <div class="stats"><div class="stat">売上(税抜)<b>${yen(t.sales)}</b></div><div class="stat">原価合計<b>${yen(t.cost)}</b></div>
       <div class="stat">粗利<b class="${t.gross < 0 ? 'neg' : ''}">${yen(t.gross)}</b></div><div class="stat">粗利率<b>${pct(t.grossRate)}</b></div>
       <div class="stat">入金済(税込)<b>${yen(t.paid)}</b></div></div>
-    <p class="muted">売上=「受注」にした見積の合計(受注見積が無い案件は請求の合計)。原価=労務費(打刻か日報がある日×日当、日報だけの日も自動で計上)+日報の経費+原価入力。行をタップすると内訳が出ます。最終更新 ${esc(d.updatedAt)}</p></div>
+    <p class="muted">売上:請負=請負契約金額(未入力なら「受注」見積の合計→請求の合計)/常用=人工×常用単価。原価=労務費(打刻か日報がある日×日当、日報だけの日も自動で計上)+日報の経費+原価入力。行をタップすると内訳が出ます。最終更新 ${esc(d.updatedAt)}</p></div>
     <div class="card"><div class="calhead"><h2 style="margin:0">案件一覧(単位:円)</h2><button class="btn out sm" id="ccsv">CSV</button></div><div class="scroll"><table>
-    <tr><th>案件</th><th>元請</th><th class="n">売上</th><th class="n">労務費</th><th class="n">経費</th>${C.map(c => `<th class="n">${c}</th>`).join('')}
+    <tr><th>案件</th><th>元請</th><th>区分</th><th class="n">人工</th><th class="n">売上</th><th class="n">労務費</th><th class="n">経費</th>${C.map(c => `<th class="n">${c}</th>`).join('')}
       <th class="n">原価計</th><th class="n">粗利</th><th class="n">粗利率</th><th class="n">実行予算</th><th class="n">予算消化</th><th class="n">請求済</th><th class="n">入金済</th></tr>
     ${d.rows.map((r, i) => `<tr class="click" data-i="${i}"><td><span class="sw" style="background:${esc(r.color)}"></span>${esc(r.name)}</td><td>${esc(r.client)}</td>
-      <td class="n">${num(r.sales)}</td><td class="n">${num(r.labor)}</td><td class="n">${num(r.expense)}</td>${C.map(c => `<td class="n">${num(r.cats[c])}</td>`).join('')}
+      <td><span class="pill ${r.contractType === '常用' ? 'tmp' : ''}">${esc(r.contractType)}</span></td><td class="n">${r.manDays}</td>
+      <td class="n">${num(r.sales)}<br><span class="muted" style="font-size:11px">${esc(r.basis)}</span></td><td class="n">${num(r.labor)}</td><td class="n">${num(r.expense)}</td>${C.map(c => `<td class="n">${num(r.cats[c])}</td>`).join('')}
       <td class="n"><b>${num(r.cost)}</b></td><td class="n ${r.gross < 0 ? 'neg' : 'pos'}">${num(r.gross)}</td><td class="n">${pct(r.grossRate)}</td>
       <td class="n">${r.budget ? num(r.budget) : '—'}</td><td class="n ${r.budgetRate > 100 ? 'neg' : ''}">${pct(r.budgetRate)}</td><td class="n">${num(r.billed)}</td><td class="n">${num(r.paid)}</td></tr>`).join('')
-      || `<tr><td colspan="${12 + C.length}" class="muted">案件がありません</td></tr>`}
+      || `<tr><td colspan="${14 + C.length}" class="muted">案件がありません</td></tr>`}
     </table></div><p class="muted">売上・原価・粗利・請求済は税抜、入金済は税込。予算消化が100%を超えると赤字表示。</p></div>`;
   $('#incd').onchange = e => { S.incDone = e.target.checked; moneySummary(); };
   document.querySelectorAll('tr[data-i]').forEach(tr => tr.onclick = () => costDetail(d.rows[Number(tr.dataset.i)], C));
   $('#ccsv').onclick = () => {
-    TBL.cost = { title: '原価管理表', head: ['案件', '元請', '売上', '労務費', '経費', ...C, '原価計', '粗利', '粗利率(%)', '実行予算', '予算消化(%)', '請求済', '入金済'],
-      rows: d.rows.map(r => [r.name, r.client, r.sales, r.labor, r.expense, ...C.map(c => r.cats[c]), r.cost, r.gross, r.grossRate ?? '', r.budget || '', r.budgetRate ?? '', r.billed, r.paid]) };
+    TBL.cost = { title: '原価管理表', head: ['案件', '元請', '区分', '人工', '売上', '売上の根拠', '労務費', '経費', ...C, '原価計', '粗利', '粗利率(%)', '実行予算', '予算消化(%)', '請求済', '入金済'],
+      rows: d.rows.map(r => [r.name, r.client, r.contractType, r.manDays, r.sales, r.basis, r.labor, r.expense, ...C.map(c => r.cats[c]), r.cost, r.gross, r.grossRate ?? '', r.budget || '', r.budgetRate ?? '', r.billed, r.paid]) };
     csv('cost');
   };
 }
 
 async function costDetail(r, C) {
   const costs = await run(() => api('costs', { siteId: r.siteId })) || [];
-  modal(`<h2>${esc(r.name)} の原価内訳</h2>
+  const jouyou = r.contractType === '常用';
+  modal(`<h2>${esc(r.name)} の原価内訳 <span class="pill ${jouyou ? 'tmp' : ''}">${esc(r.contractType)}</span></h2>
+    ${jouyou ? `<div class="card" style="background:var(--g2)"><b>常用の請求書を作る</b>
+      <p class="muted" style="margin:4px 0">選んだ月の打刻・日報から、作業員ごとの人工 × 常用単価(${r.unitPrice ? num(r.unitPrice) + '円' : '未設定'})で請求書を作ります。</p>
+      <div class="row"><input type="month" id="jy_m" value="${ym(new Date())}"><button class="btn" id="jy_go">請求書を作成</button></div></div>` : ''}
     <table><tr><th>項目</th><th class="n">金額(円)</th></tr>
+    <tr><td><b>売上</b>(${esc(r.basis)})</td><td class="n"><b>${num(r.sales)}</b></td></tr>
+    ${jouyou ? '' : `<tr><td>請負契約金額</td><td class="n">${r.contractAmount ? num(r.contractAmount) : '未設定'}</td></tr>`}
     <tr><td>受注額(受注した見積・税抜)</td><td class="n">${num(r.contract)}</td></tr>
     <tr><td>請求済(税抜)</td><td class="n">${num(r.billed)}</td></tr>
     <tr><td>入金済(税込)</td><td class="n">${num(r.paid)}</td></tr>
@@ -454,6 +467,10 @@ async function costDetail(r, C) {
       ${costs.map(c => `<tr><td>${esc(c.date)}</td><td>${esc(c.category)}</td><td>${esc(c.vendor)}</td><td>${esc(c.content)}</td><td class="n">${num(c.amount)}</td></tr>`).join('')}</table></div>` : '<p class="muted">まだありません</p>'}
     <div class="row" style="margin-top:12px"><button class="btn" id="cd_add">この案件の原価を入力</button><button class="btn out" onclick="closeModal()">閉じる</button></div>`, true);
   $('#cd_add').onclick = () => { closeModal(); S.moneySub = 'costs'; S.costSite = r.siteId; viewMoney(); };
+  if ($('#jy_go')) $('#jy_go').onclick = () => run(async () => {
+    const inv = await api('jouyouInvoice', { siteId: r.siteId, month: $('#jy_m').value });
+    closeModal(); toast(`請求書 ${inv.no} を作成しました(内容を確認して印刷してください)`); S.moneySub = 'invoices'; viewMoney();
+  });
 }
 
 // 見積書・請求書の一覧
