@@ -34,7 +34,7 @@
   th{color:var(--sub);font-weight:600;font-size:12px} td.n,th.n{text-align:right}
   .scroll{overflow-x:auto}
   .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}
-  .stat{background:var(--g2);border-radius:10px;padding:12px}.stat b{display:block;font-size:22px;color:var(--g)}
+  .stat{background:var(--g2);border-radius:10px;padding:12px}.stat b{display:block;font-size:clamp(16px,1.7vw,22px);color:var(--g);white-space:nowrap}
   .clock{font-size:42px;font-weight:700;text-align:center;letter-spacing:2px}
   /* カレンダー */
   .calhead{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:8px}
@@ -46,6 +46,21 @@
   .ev{color:#fff;border-radius:4px;padding:1px 4px;margin-top:2px;font-size:11px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
   .ev.tmp{opacity:.6;border:1px dashed #fff}
   .sun{color:var(--red)}.sat{color:#2f6fd6}
+  /* 週ごとの帯表示(連日の予定をつなげる) */
+  .calw{border-left:1px solid var(--line);border-top:1px solid var(--line)}
+  .calw .wh{display:grid;grid-template-columns:repeat(7,1fr)}
+  .calw .wh div{text-align:center;font-size:12px;padding:4px;color:var(--sub);background:#fafbfa;border-right:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .wk{position:relative;min-height:100px;border-bottom:1px solid var(--line)}
+  .wk .bg{position:absolute;inset:0;display:grid;grid-template-columns:repeat(7,1fr)}
+  .wk .bg .d{border-right:1px solid var(--line);padding:3px 4px;font-size:12px;cursor:pointer;background:#fff}
+  .wk .bg .d.other{background:#fafbfa;color:#b5beb9}
+  .wk .bg .d.today .num{background:var(--g);color:#fff;border-radius:99px;padding:0 6px}
+  .wk .lay{position:relative;display:grid;grid-template-columns:repeat(7,1fr);grid-auto-rows:20px;row-gap:3px;padding:24px 0 8px;pointer-events:none}
+  .bar{pointer-events:auto;color:#fff;font-size:11.5px;line-height:16px;border-radius:5px;padding:2px 6px;margin:0 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;font-weight:600}
+  .bar.cl{border-top-left-radius:0;border-bottom-left-radius:0;margin-left:0}
+  .bar.cr{border-top-right-radius:0;border-bottom-right-radius:0;margin-right:0}
+  .bar.tmp{opacity:.65;background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.28) 0 6px,transparent 6px 12px)}
+  .more{pointer-events:auto;font-size:11px;color:var(--sub);padding-left:6px;cursor:pointer;line-height:20px}
   /* モーダル */
   .modal{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:flex-end;justify-content:center;z-index:20}
   .modal .box{background:#fff;width:100%;max-width:560px;max-height:92vh;overflow:auto;border-radius:16px 16px 0 0;padding:18px}
@@ -60,6 +75,8 @@
   .seg button{border:1.5px solid var(--g);background:#fff;color:var(--g);border-radius:99px;padding:8px 14px;font-weight:700;font-size:14px}
   .seg button.on{background:var(--g);color:#fff}
   .neg{color:var(--red);font-weight:700} .pos{color:var(--g);font-weight:700}
+  .pill.red{background:#fde8e8;color:var(--red)} .pill.blue{background:#e6effc;color:#2f6fd6} .pill.gray{background:#eef0ef;color:var(--sub)}
+  .seg button .c{display:inline-block;min-width:18px;margin-left:4px;padding:0 5px;border-radius:99px;background:rgba(0,0,0,.08);font-size:12px}
   .items td{padding:3px 2px} .items input{padding:7px;font-size:14px}
   .modal .box.wide{max-width:860px}
   tr.click{cursor:pointer} tr.click:hover{background:var(--g2)}
@@ -213,26 +230,45 @@ async function viewCal() {
   const days = [...Array(42)].map((_, i) => new Date(start.getFullYear(), start.getMonth(), start.getDate() + i));
   const evs = await run(() => api('schedules', { from: ymd(days[0]), to: ymd(days[41]) })) || [];
   const todayS = ymd(new Date());
+  // 連日の予定を週ごとの「帯」にして、空いている段に詰めて並べる
+  const day0 = Date.parse(ymd(days[0]) + 'T00:00:00');
+  const idx = ds => Math.round((Date.parse(ds + 'T00:00:00') - day0) / 864e5);
+  const items = evs.map(e => ({ e, s: idx(e.start.slice(0, 10)), en: idx(e.end.slice(0, 10)) }))
+    .sort((a, b) => a.s - b.s || (b.en - b.s) - (a.en - a.s));
+  const MAXL = 4; // 1週に表示する段数(超えた分は「+n」)
+  const weeks = [0, 1, 2, 3, 4, 5].map(w => {
+    const w0 = w * 7, w6 = w0 + 6, lanes = [], hidden = [0, 0, 0, 0, 0, 0, 0];
+    let bars = '';
+    items.forEach(({ e, s, en }) => {
+      if (en < w0 || s > w6) return;
+      const a = Math.max(s, w0) - w0, b = Math.min(en, w6) - w0;
+      let l = 0;
+      while ((lanes[l] = lanes[l] || [0, 0, 0, 0, 0, 0, 0]).slice(a, b + 1).some(Boolean)) l++;
+      for (let i = a; i <= b; i++) lanes[l][i] = 1;
+      if (l >= MAXL) { for (let i = a; i <= b; i++) hidden[i]++; return; }
+      bars += `<div class="bar ${s < w0 ? 'cl' : ''} ${en > w6 ? 'cr' : ''} ${e.status === '仮' ? 'tmp' : ''}" data-id="${esc(e.id)}"
+        style="grid-column:${a + 1}/span ${b - a + 1};grid-row:${l + 1};background:${esc(e.color)}" title="${esc(e.siteName + ' ' + e.title)}">${e.status === '仮' ? '仮 ' : ''}${esc(e.siteName)} ${esc(e.title)}</div>`;
+    });
+    hidden.forEach((n, i) => { if (n) bars += `<div class="more" data-d="${ymd(days[w0 + i])}" style="grid-column:${i + 1};grid-row:${MAXL + 1}">+${n}件</div>`; });
+    const bg = days.slice(w0, w0 + 7).map(d => {
+      const ds = ymd(d);
+      return `<div class="d ${d.getMonth() !== m - 1 ? 'other' : ''} ${ds === todayS ? 'today' : ''}" data-d="${ds}"><span class="num ${d.getDay() === 0 ? 'sun' : d.getDay() === 6 ? 'sat' : ''}">${d.getDate()}</span></div>`;
+    }).join('');
+    return `<div class="wk"><div class="bg">${bg}</div><div class="lay">${bars}</div></div>`;
+  }).join('');
   $('#view').innerHTML = `<div class="card">
     <div class="calhead">
       <div><button class="btn out sm" id="prev">‹</button> <b>${y}年${m}月</b> <button class="btn out sm" id="next">›</button> <button class="btn out sm" id="now">今月</button></div>
       ${S.me.can.edit ? '<button class="btn sm" id="add">+ スケジュール作成</button>' : ''}
     </div>
-    <div class="cal">${['日', '月', '火', '水', '木', '金', '土'].map((w, i) => `<div class="h ${i === 0 ? 'sun' : i === 6 ? 'sat' : ''}">${w}</div>`).join('')}
-    ${days.map(d => {
-      const ds = ymd(d), list = evs.filter(e => e.start.slice(0, 10) <= ds && e.end.slice(0, 10) >= ds);
-      return `<div class="d ${d.getMonth() !== m - 1 ? 'other' : ''} ${ds === todayS ? 'today' : ''}" data-d="${ds}">
-        <span class="num ${d.getDay() === 0 ? 'sun' : d.getDay() === 6 ? 'sat' : ''}">${d.getDate()}</span>
-        ${list.slice(0, 4).map(e => `<div class="ev ${e.status === '仮' ? 'tmp' : ''}" style="background:${esc(e.color)}" data-id="${esc(e.id)}">${e.status === '仮' ? '仮 ' : ''}${esc(e.siteName)} ${esc(e.title)}</div>`).join('')}
-        ${list.length > 4 ? `<div class="muted">+${list.length - 4}</div>` : ''}</div>`;
-    }).join('')}</div>
-    <p class="muted">予定をタップすると詳細、日付をタップするとその日の一覧が出ます。</p></div>`;
+    <div class="calw"><div class="wh">${['日', '月', '火', '水', '木', '金', '土'].map((w, i) => `<div class="${i === 0 ? 'sun' : i === 6 ? 'sat' : ''}">${w}</div>`).join('')}</div>${weeks}</div>
+    <p class="muted">連日の予定は1本の帯で表示します。帯をタップすると詳細、日付をタップするとその日の一覧が出ます。斜線の帯は「仮」の予定です。</p></div>`;
   $('#prev').onclick = () => { S.calMonth = ym(new Date(y, m - 2, 1)); viewCal(); };
   $('#next').onclick = () => { S.calMonth = ym(new Date(y, m, 1)); viewCal(); };
   $('#now').onclick = () => { S.calMonth = ym(new Date()); viewCal(); };
   if ($('#add')) $('#add').onclick = () => scheduleForm({});
-  document.querySelector('.cal').onclick = e => {
-    const ev = e.target.closest('.ev'), day = e.target.closest('.d');
+  document.querySelector('.calw').onclick = e => {
+    const ev = e.target.closest('.bar'), day = e.target.closest('.d') || e.target.closest('.more');
     if (ev) return scheduleDetail(evs.find(x => x.id === ev.dataset.id));
     if (day) {
       const ds = day.dataset.d, list = evs.filter(x => x.start.slice(0, 10) <= ds && x.end.slice(0, 10) >= ds);
@@ -320,6 +356,9 @@ async function viewAgg() {
   const month = S.aggMonth || ym(new Date());
   const load = async () => {
     const a = await run(() => api('aggregate', { month })); if (!a || S.tab !== 'agg') return;
+    // 案件ごとの見積・請求の状況(お金の権限がある人だけ)
+    const cs = S.me.can.money ? await run(() => api('costSummary', { includeDone: true })) : null;
+    const st = {}; (cs ? cs.rows : []).forEach(r => { st[r.siteId] = r; });
     S.lastAgg = a;
     $('#view').innerHTML = `<div class="card"><div class="calhead"><h2 style="margin:0">${month} の集計</h2><input type="month" id="am" value="${month}" style="width:auto"></div>
       <div class="stats">
@@ -330,7 +369,8 @@ async function viewAgg() {
         <div class="stat">経費合計<b>${yen(a.totals.expense)}</b></div>
       </div><p class="muted">最終更新 ${esc(a.updatedAt)}(30秒ごとに自動更新)</p></div>
       ${table('作業員別(勤務日数)', 'workers', ['氏名', '出勤日数', '労働時間(h)', '現場数', '未退勤'], a.workers.map(w => [w.name, w.days, w.hours, w.sites, w.open || '']))}
-      ${table('現場(案件)別', 'sites', ['現場', '元請', '延べ人工', '労働時間(h)', '人数', '経費(円)', '実行予算(円)'], a.sites.map(s => [s.name, s.client, s.manDays, s.hours, s.workers, s.expense, s.budget || '']))}
+      ${table('現場(案件)別', 'sites', ['現場', '元請', '見積', '請求', '未請求額(円)', '延べ人工', '労働時間(h)', '人数', '経費(円)', '実行予算(円)'],
+        a.sites.map(s => { const x = st[s.siteId] || {}; return [s.name, s.client, x.estStatus ? { html: pill(x.estStatus), text: x.estStatus } : '—', x.billStatus ? { html: pill(x.billStatus), text: x.billStatus } : '—', x.unbilled ?? '', s.manDays, s.hours, s.workers, s.expense, s.budget || '']; }))}
       ${table('元請別', 'clients', ['元請', '延べ人工', '労働時間(h)', '現場数', '経費(円)'], a.clients.map(c => [c.client, c.manDays, c.hours, c.sites, c.expense]))}
       ${table('日別の出勤人数', 'daily', ['日付', '人数'], a.daily.map(d => [d.date, d.people]))}`;
     $('#am').onchange = e => { S.aggMonth = e.target.value; viewAgg(); };
@@ -344,11 +384,11 @@ function table(title, key, head, rows) {
   TBL[key] = { title, head, rows };
   return `<div class="card"><div class="calhead"><h2 style="margin:0">${title}</h2><button class="btn out sm" data-csv="${key}">CSV</button></div>
     <div class="scroll"><table><tr>${head.map((h, i) => `<th class="${i ? 'n' : ''}">${h}</th>`).join('')}</tr>
-    ${rows.map(r => `<tr>${r.map((c, i) => `<td class="${i && typeof c === 'number' ? 'n' : ''}">${typeof c === 'number' && c >= 1000 ? c.toLocaleString() : esc(c)}</td>`).join('')}</tr>`).join('') || `<tr><td colspan="${head.length}" class="muted">データがありません</td></tr>`}
+    ${rows.map(r => `<tr>${r.map((c, i) => `<td class="${i && typeof c === 'number' ? 'n' : ''}">${c && c.html ? c.html : typeof c === 'number' && c >= 1000 ? c.toLocaleString() : esc(c)}</td>`).join('')}</tr>`).join('') || `<tr><td colspan="${head.length}" class="muted">データがありません</td></tr>`}
     </table></div></div>`;
 }
 function csv(key) {
-  const t = TBL[key], body = [t.head, ...t.rows].map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\r\n');
+  const t = TBL[key], body = [t.head, ...t.rows].map(r => r.map(c => `"${String(c && c.html ? c.text : c).replace(/"/g, '""')}"`).join(',')).join('\r\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob(['﻿' + body], { type: 'text/csv' }));
   a.download = `${t.title}_${S.aggMonth || ym(new Date())}.csv`; a.click();
@@ -414,31 +454,45 @@ async function viewMoney() {
   ({ summary: moneySummary, estimates: () => docList('estimates'), invoices: () => docList('invoices'), costs: costInput })[sub]();
 }
 
+// 見積・請求の状況を色付きで表示
+const PILL = { '見積中': 'tmp', '受注': '', '失注': 'gray', '見積なし': 'gray', '未請求': 'red', '一部請求': 'tmp', '請求済(未入金)': 'blue', '入金済': '', '対象なし': 'gray' };
+const pill = v => `<span class="pill ${PILL[v] ?? 'gray'}">${esc(v)}</span>`;
+const FILTERS = ['見積中', '未請求', '一部請求', '請求済(未入金)', '入金済'];
+const matchFilter = (r, f) => !f || (f === '見積中' ? r.estStatus === f : r.billStatus === f);
+
 // 案件別 原価管理表
 async function moneySummary() {
   const d = await run(() => api('costSummary', { includeDone: !!S.incDone })); if (!d) return;
-  const t = d.totals, C = d.categories;
+  const t = d.totals, C = d.categories, f = S.billFilter || '';
+  const rows = d.rows.filter(r => matchFilter(r, f));
   $('#mview').innerHTML = `<div class="card"><div class="calhead"><h2 style="margin:0">案件別 原価管理表</h2>
       <label style="margin:0;display:flex;gap:6px;align-items:center;color:var(--txt)"><input type="checkbox" id="incd" style="width:auto" ${S.incDone ? 'checked' : ''}>完了案件も表示</label></div>
     <div class="stats"><div class="stat">売上(税抜)<b>${yen(t.sales)}</b></div><div class="stat">原価合計<b>${yen(t.cost)}</b></div>
       <div class="stat">粗利<b class="${t.gross < 0 ? 'neg' : ''}">${yen(t.gross)}</b></div><div class="stat">粗利率<b>${pct(t.grossRate)}</b></div>
-      <div class="stat">入金済(税込)<b>${yen(t.paid)}</b></div></div>
+      <div class="stat">入金済(税込)<b>${yen(t.paid)}</b></div>
+      <div class="stat">未請求額(税抜)<b class="${t.unbilled ? 'neg' : ''}">${yen(t.unbilled)}</b></div><div class="stat">未入金額(税込)<b>${yen(t.unpaid)}</b></div></div>
+    <h3>状況で絞り込み</h3>
+    <div class="seg"><button data-f="" class="${f ? '' : 'on'}">すべて<span class="c">${d.rows.length}</span></button>
+      ${FILTERS.map(k => `<button data-f="${k}" class="${f === k ? 'on' : ''}">${k}<span class="c">${d.counts[k]}</span></button>`).join('')}</div>
     <p class="muted">売上:請負=請負契約金額(未入力なら「受注」見積の合計→請求の合計)/常用=人工×常用単価。原価=労務費(打刻か日報がある日×日当、日報だけの日も自動で計上)+日報の経費+原価入力。行をタップすると内訳が出ます。最終更新 ${esc(d.updatedAt)}</p></div>
     <div class="card"><div class="calhead"><h2 style="margin:0">案件一覧(単位:円)</h2><button class="btn out sm" id="ccsv">CSV</button></div><div class="scroll"><table>
-    <tr><th>案件</th><th>元請</th><th>区分</th><th class="n">人工</th><th class="n">売上</th><th class="n">労務費</th><th class="n">経費</th>${C.map(c => `<th class="n">${c}</th>`).join('')}
+    <tr><th>案件</th><th>元請</th><th>区分</th><th>見積</th><th>請求</th><th class="n">未請求額</th><th class="n">未入金額</th><th class="n">人工</th><th class="n">売上</th><th class="n">労務費</th><th class="n">経費</th>${C.map(c => `<th class="n">${c}</th>`).join('')}
       <th class="n">原価計</th><th class="n">粗利</th><th class="n">粗利率</th><th class="n">実行予算</th><th class="n">予算消化</th><th class="n">請求済</th><th class="n">入金済</th></tr>
-    ${d.rows.map((r, i) => `<tr class="click" data-i="${i}"><td><span class="sw" style="background:${esc(r.color)}"></span>${esc(r.name)}</td><td>${esc(r.client)}</td>
-      <td><span class="pill ${r.contractType === '常用' ? 'tmp' : ''}">${esc(r.contractType)}</span></td><td class="n">${r.manDays}</td>
+    ${rows.map((r, i) => `<tr class="click" data-i="${i}"><td><span class="sw" style="background:${esc(r.color)}"></span>${esc(r.name)}</td><td>${esc(r.client)}</td>
+      <td><span class="pill ${r.contractType === '常用' ? 'tmp' : ''}">${esc(r.contractType)}</span></td>
+      <td>${pill(r.estStatus)}</td><td>${pill(r.billStatus)}${r.draft ? `<br><span class="muted" style="font-size:11px">未送付${r.draft}件</span>` : ''}</td>
+      <td class="n ${r.unbilled ? 'neg' : ''}">${num(r.unbilled)}</td><td class="n">${num(r.unpaid)}</td><td class="n">${r.manDays}</td>
       <td class="n">${num(r.sales)}<br><span class="muted" style="font-size:11px">${esc(r.basis)}</span></td><td class="n">${num(r.labor)}</td><td class="n">${num(r.expense)}</td>${C.map(c => `<td class="n">${num(r.cats[c])}</td>`).join('')}
       <td class="n"><b>${num(r.cost)}</b></td><td class="n ${r.gross < 0 ? 'neg' : 'pos'}">${num(r.gross)}</td><td class="n">${pct(r.grossRate)}</td>
       <td class="n">${r.budget ? num(r.budget) : '—'}</td><td class="n ${r.budgetRate > 100 ? 'neg' : ''}">${pct(r.budgetRate)}</td><td class="n">${num(r.billed)}</td><td class="n">${num(r.paid)}</td></tr>`).join('')
-      || `<tr><td colspan="${14 + C.length}" class="muted">案件がありません</td></tr>`}
+      || `<tr><td colspan="${18 + C.length}" class="muted">${f ? '該当する案件はありません' : '案件がありません'}</td></tr>`}
     </table></div><p class="muted">売上・原価・粗利・請求済は税抜、入金済は税込。予算消化が100%を超えると赤字表示。</p></div>`;
   $('#incd').onchange = e => { S.incDone = e.target.checked; moneySummary(); };
-  document.querySelectorAll('tr[data-i]').forEach(tr => tr.onclick = () => costDetail(d.rows[Number(tr.dataset.i)], C));
+  document.querySelectorAll('[data-f]').forEach(b => b.onclick = () => { S.billFilter = b.dataset.f; moneySummary(); });
+  document.querySelectorAll('tr[data-i]').forEach(tr => tr.onclick = () => costDetail(rows[Number(tr.dataset.i)], C));
   $('#ccsv').onclick = () => {
-    TBL.cost = { title: '原価管理表', head: ['案件', '元請', '区分', '人工', '売上', '売上の根拠', '労務費', '経費', ...C, '原価計', '粗利', '粗利率(%)', '実行予算', '予算消化(%)', '請求済', '入金済'],
-      rows: d.rows.map(r => [r.name, r.client, r.contractType, r.manDays, r.sales, r.basis, r.labor, r.expense, ...C.map(c => r.cats[c]), r.cost, r.gross, r.grossRate ?? '', r.budget || '', r.budgetRate ?? '', r.billed, r.paid]) };
+    TBL.cost = { title: '原価管理表', head: ['案件', '元請', '区分', '見積', '請求', '未請求額', '未入金額', '人工', '売上', '売上の根拠', '労務費', '経費', ...C, '原価計', '粗利', '粗利率(%)', '実行予算', '予算消化(%)', '請求済', '入金済'],
+      rows: rows.map(r => [r.name, r.client, r.contractType, r.estStatus, r.billStatus, r.unbilled, r.unpaid, r.manDays, r.sales, r.basis, r.labor, r.expense, ...C.map(c => r.cats[c]), r.cost, r.gross, r.grossRate ?? '', r.budget || '', r.budgetRate ?? '', r.billed, r.paid]) };
     csv('cost');
   };
 }
@@ -450,6 +504,8 @@ async function costDetail(r, C) {
     ${jouyou ? `<div class="card" style="background:var(--g2)"><b>常用の請求書を作る</b>
       <p class="muted" style="margin:4px 0">選んだ月の打刻・日報から、作業員ごとの人工 × 常用単価(${r.unitPrice ? num(r.unitPrice) + '円' : '未設定'})で請求書を作ります。</p>
       <div class="row"><input type="month" id="jy_m" value="${ym(new Date())}"><button class="btn" id="jy_go">請求書を作成</button></div></div>` : ''}
+    <p>見積:${pill(r.estStatus)} 請求:${pill(r.billStatus)}${r.draft ? ` <span class="muted">(未送付の請求書 ${r.draft}件)</span>` : ''}
+      未請求額 <b class="${r.unbilled ? 'neg' : ''}">${yen(r.unbilled)}</b> / 未入金額 <b>${yen(r.unpaid)}</b></p>
     <table><tr><th>項目</th><th class="n">金額(円)</th></tr>
     <tr><td><b>売上</b>(${esc(r.basis)})</td><td class="n"><b>${num(r.sales)}</b></td></tr>
     ${jouyou ? '' : `<tr><td>請負契約金額</td><td class="n">${r.contractAmount ? num(r.contractAmount) : '未設定'}</td></tr>`}
