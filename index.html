@@ -328,15 +328,34 @@ async function viewReport() {
     <label>作業内容 *</label><textarea id="r_c" placeholder="例:2F内装解体、産廃搬出2t車1台"></textarea>
     <label>経費</label><div class="row"><select id="r_xt"><option value="">なし</option><option>駐車場代</option><option>高速代</option><option>ガソリン代</option><option>材料費</option><option>その他</option></select>
     <input type="number" id="r_xa" placeholder="金額(円・税抜)" inputmode="numeric"></div>
+    ${S.me.can.proxy ? `<label>一緒に作業した人(選んだ人の日報もまとめて提出されます)</label>
+      <div class="chips" id="r_workers">${S.members.filter(u => u.userId !== S.me.userId).map(u => `<label><input type="checkbox" value="${esc(u.userId)}">${esc(u.name)}</label>`).join('') || '<span class="muted">他の作業員がいません</span>'}</div>
+      <div class="row" style="margin-top:6px"><button class="btn out sm" id="r_all" type="button">全員選択</button><button class="btn out sm" id="r_none" type="button">選択解除</button></div>
+      <div class="chips" style="margin-top:8px"><label><input type="checkbox" id="r_self" checked>自分の日報も提出する</label></div>
+      <p class="muted">作業内容と時間は全員同じ内容で登録されます。経費は提出者1人分だけに付きます。今日の予定の担当者は最初からチェックされます。</p>` : ''}
     <button class="btn big" id="r_save">保存(提出)</button></div>
     <div class="card"><div class="calhead"><h2 style="margin:0">${S.me.can.viewAll ? '日報一覧' : '自分の日報'}</h2><input type="month" id="r_m" value="${month}" style="width:auto"></div>
     <div class="scroll"><table><tr><th>日付</th><th>作成者</th><th>現場</th><th>時間</th><th>作業内容</th><th class="n">経費</th></tr>
-    ${list.map(r => `<tr><td>${esc(r.date)}</td><td>${esc(r.name)}</td><td>${esc(r.siteName)}</td><td>${esc(r.start)}-${esc(r.end)}</td><td style="white-space:normal;min-width:180px">${esc(r.content)}</td><td class="n">${r.expenseAmount ? esc(r.expenseType) + ' ' + yen(r.expenseAmount) : ''}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">まだありません</td></tr>'}
+    ${list.map(r => `<tr><td>${esc(r.date)}</td><td>${esc(r.name)}${r.submittedBy ? `<br><span class="muted" style="font-size:11px">${esc(r.submittedBy)}が代理提出</span>` : ''}</td><td>${esc(r.siteName)}</td><td>${esc(r.start)}-${esc(r.end)}</td><td style="white-space:normal;min-width:180px">${esc(r.content)}</td><td class="n">${r.expenseAmount ? esc(r.expenseType) + ' ' + yen(r.expenseAmount) : ''}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">まだありません</td></tr>'}
     </table></div></div>`;
   $('#r_m').onchange = e => { S.repMonth = e.target.value; viewReport(); };
+  // 代理提出:選んだ現場の「今日の予定」の担当者を自動でチェック
+  const preset = () => {
+    if (!$('#r_workers')) return;
+    const ids = []; today.schedules.filter(s => s.siteId === $('#r_site').value).forEach(s => (s.assignees || []).forEach(id => ids.push(id)));
+    document.querySelectorAll('#r_workers input').forEach(c => { c.checked = ids.indexOf(c.value) >= 0; });
+  };
+  if ($('#r_workers')) {
+    $('#r_site').onchange = preset; preset();
+    $('#r_all').onclick = () => document.querySelectorAll('#r_workers input').forEach(c => { c.checked = true; });
+    $('#r_none').onclick = () => document.querySelectorAll('#r_workers input').forEach(c => { c.checked = false; });
+  }
   $('#r_save').onclick = () => run(async () => {
-    await api('submitReport', { date: $('#r_date').value, siteId: $('#r_site').value, start: $('#r_s').value, end: $('#r_e').value, content: $('#r_c').value, expenseType: $('#r_xt').value, expenseAmount: $('#r_xa').value });
-    toast('日報を提出しました'); viewReport();
+    const workerIds = [...document.querySelectorAll('#r_workers input:checked')].map(c => c.value);
+    const r = await api('submitReport', { date: $('#r_date').value, siteId: $('#r_site').value, start: $('#r_s').value, end: $('#r_e').value, content: $('#r_c').value, expenseType: $('#r_xt').value, expenseAmount: $('#r_xa').value,
+      workerIds, includeSelf: $('#r_self') ? $('#r_self').checked : true });
+    toast(`${r.count}人分の日報を提出しました` + (r.skipped.length ? `(提出済みなどで除外:${r.skipped.join('、')})` : ''));
+    viewReport();
   });
 }
 
