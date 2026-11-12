@@ -9,8 +9,8 @@
   :root{--g:#2e6b4f;--g2:#e8f2ec;--line:#e2e6e4;--txt:#1f2a25;--sub:#6b7a72;--red:#d64545;--bg:#f6f8f7}
   *{box-sizing:border-box}
   body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;color:var(--txt);background:var(--bg);font-size:15px}
-  header{background:var(--g);color:#fff;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:5}
-  header b{font-size:17px} header small{opacity:.85}
+  header{background:var(--g);color:#fff;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;gap:8px;position:sticky;top:0;z-index:5}
+  header b{font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0} header small{opacity:.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:110px}
   nav{display:flex;overflow-x:auto;background:#fff;border-bottom:1px solid var(--line);position:sticky;top:46px;z-index:4}
   nav button{flex:1 0 auto;border:0;background:none;padding:12px 14px;font-size:14px;color:var(--sub);border-bottom:3px solid transparent}
   nav button.on{color:var(--g);border-color:var(--g);font-weight:700}
@@ -103,7 +103,7 @@
 </style>
 </head>
 <body>
-<header><b>現場管理</b><small id="who">読み込み中…</small></header>
+<header><b id="appName">現場管理</b><span style="display:flex;gap:8px;align-items:center"><small id="who">読み込み中…</small><select id="langSel" aria-label="Language" style="width:auto;padding:4px 6px;font-size:13px;border-radius:6px"></select></span></header>
 <nav id="tabs"></nav>
 <main id="view"><div class="card">読み込み中…</div></main>
 <div id="toast"></div>
@@ -125,10 +125,180 @@ setTimeout(function () {
 </script>
 
 <script>
+// ===== 多言語(日本語・英語・ベトナム語・インドネシア語・タガログ語)=====
+// 並び:[日本語, English, Tiếng Việt, Bahasa Indonesia, Tagalog]。{n} などは差し込み。
+var LANGS = ['ja', 'en', 'vi', 'id', 'tl'];
+var LANG_NAMES = { ja: '日本語', en: 'English', vi: 'Tiếng Việt', id: 'Bahasa Indonesia', tl: 'Tagalog' };
+var D = {
+  appName: ['現場管理', 'Site Manager', 'Quản lý công trường', 'Manajemen Lokasi', 'Pamamahala ng Site'],
+  loading: ['読み込み中…', 'Loading…', 'Đang tải…', 'Memuat…', 'Naglo-load…'],
+  unregistered: ['未登録', 'Not registered', 'Chưa đăng ký', 'Belum terdaftar', 'Hindi pa rehistrado'],
+  role_admin: ['管理者', 'Admin', 'Quản trị viên', 'Admin', 'Admin'],
+  role_office: ['事務', 'Office', 'Văn phòng', 'Kantor', 'Opisina'],
+  role_foreman: ['職長', 'Foreman', 'Tổ trưởng', 'Mandor', 'Foreman'],
+  role_worker: ['職人', 'Worker', 'Công nhân', 'Pekerja', 'Manggagawa'],
+  role_pending: ['承認待ち', 'Pending', 'Chờ duyệt', 'Menunggu', 'Naghihintay'],
+  role_disabled: ['停止', 'Disabled', 'Đã khóa', 'Nonaktif', 'Hindi aktibo'],
+  tab_home: ['打刻', 'Clock In/Out', 'Chấm công', 'Absen', 'Time In/Out'],
+  tab_cal: ['予定', 'Schedule', 'Lịch', 'Jadwal', 'Iskedyul'],
+  tab_report: ['日報', 'Daily Report', 'Báo cáo', 'Laporan', 'Ulat'],
+  tab_mine: ['自分の記録', 'My Records', 'Hồ sơ của tôi', 'Catatan Saya', 'Aking Rekord'],
+  tab_advance: ['前払い', 'Advance Pay', 'Ứng lương', 'Kasbon', 'Cash Advance'],
+  tab_agg: ['集計', 'Summary', 'Tổng hợp', 'Rekap', 'Buod'],
+  tab_money: ['お金・原価', 'Costs', 'Chi phí', 'Biaya', 'Gastos'],
+  tab_admin: ['管理', 'Admin', 'Quản lý', 'Kelola', 'Pamamahala'],
+  pendingTitle: ['管理者の承認待ちです', 'Waiting for approval', 'Đang chờ quản trị viên duyệt', 'Menunggu persetujuan admin', 'Naghihintay ng pag-apruba ng admin'],
+  pendingBody: ['管理者が権限を設定すると使えるようになります。しばらくしてから開き直してください。', 'You can use the app after the administrator approves you. Please reopen it later.', 'Bạn có thể sử dụng sau khi quản trị viên duyệt. Vui lòng mở lại sau.', 'Anda dapat memakai aplikasi setelah disetujui admin. Silakan buka kembali nanti.', 'Magagamit mo ang app kapag inaprubahan ka ng admin. Buksan muli mamaya.'],
+  disabledTitle: ['利用停止中です', 'Your account is disabled', 'Tài khoản đã bị khóa', 'Akun Anda dinonaktifkan', 'Hindi aktibo ang iyong account'],
+  disabledBody: ['管理者にお問い合わせください。', 'Please contact the administrator.', 'Vui lòng liên hệ quản trị viên.', 'Silakan hubungi admin.', 'Makipag-ugnayan sa admin.'],
+  bootFail: ['起動できませんでした', 'Could not start', 'Không thể khởi động', 'Gagal memulai', 'Hindi makapagsimula'],
+  regTitle: ['はじめに氏名を登録してください', 'Please register your name first', 'Vui lòng đăng ký họ tên trước', 'Silakan daftarkan nama Anda dulu', 'Irehistro muna ang iyong pangalan'],
+  regName: ['氏名(フルネーム)', 'Full name', 'Họ và tên', 'Nama lengkap', 'Buong pangalan'],
+  regPh: ['例:山田 太郎', 'e.g. John Smith', 'Ví dụ: Nguyen Van A', 'Contoh: Budi Santoso', 'Hal.: Juan Dela Cruz'],
+  regBtn: ['登録する', 'Register', 'Đăng ký', 'Daftar', 'Magrehistro'],
+  regNote: ['登録後、管理者が権限を設定すると使えるようになります。', 'After registering, you can use the app once the administrator approves you.', 'Sau khi đăng ký, bạn có thể sử dụng khi quản trị viên duyệt.', 'Setelah mendaftar, aplikasi bisa dipakai setelah disetujui admin.', 'Pagkatapos magrehistro, magagamit mo ito kapag inaprubahan ng admin.'],
+  registered: ['登録しました', 'Registered', 'Đã đăng ký', 'Berhasil terdaftar', 'Nakarehistro na'],
+  langChanged: ['言語を変更しました。LINEのメニューも切り替わります', 'Language changed. Your LINE menu will switch too.', 'Đã đổi ngôn ngữ. Menu LINE cũng sẽ thay đổi.', 'Bahasa diubah. Menu LINE juga akan berganti.', 'Napalitan ang wika. Magbabago rin ang menu sa LINE.'],
+  working: ['出勤中', 'Working', 'Đang làm', 'Sedang bekerja', 'Nagtatrabaho'],
+  clockOut: ['退勤する', 'Clock out', 'Chấm công về', 'Absen pulang', 'Mag-time out'],
+  site: ['現場', 'Site', 'Công trường', 'Lokasi', 'Site'],
+  select: ['選択してください', 'Please select', 'Vui lòng chọn', 'Silakan pilih', 'Pumili'],
+  clockIn: ['出勤する', 'Clock in', 'Chấm công vào', 'Absen masuk', 'Mag-time in'],
+  todaySched: ['今日の予定', "Today's schedule", 'Lịch hôm nay', 'Jadwal hari ini', 'Iskedyul ngayon'],
+  noTodaySched: ['今日の予定はありません', 'No schedule today', 'Hôm nay không có lịch', 'Tidak ada jadwal hari ini', 'Walang iskedyul ngayon'],
+  todayPunch: ['今日の打刻', "Today's records", 'Chấm công hôm nay', 'Absen hari ini', 'Mga rekord ngayon'],
+  none: ['まだありません', 'None yet', 'Chưa có', 'Belum ada', 'Wala pa'],
+  inDone: ['出勤しました。今日も一日ご安全に!', 'Clocked in. Stay safe today!', 'Đã chấm công vào. Chúc một ngày làm việc an toàn!', 'Absen masuk berhasil. Tetap aman hari ini!', 'Naka-time in na. Mag-ingat ngayong araw!'],
+  outDone: ['退勤しました({h}時間)', 'Clocked out ({h} h)', 'Đã chấm công về ({h} giờ)', 'Absen pulang berhasil ({h} jam)', 'Naka-time out na ({h} oras)'],
+  st_確定: ['確定', 'Confirmed', 'Chính thức', 'Pasti', 'Kumpirmado'],
+  st_仮: ['仮', 'Tentative', 'Tạm thời', 'Sementara', 'Pansamantala'],
+  thisMonth: ['今月', 'This month', 'Tháng này', 'Bulan ini', 'Ngayong buwan'],
+  weekdays: ['日,月,火,水,木,金,土', 'Sun,Mon,Tue,Wed,Thu,Fri,Sat', 'CN,T2,T3,T4,T5,T6,T7', 'Min,Sen,Sel,Rab,Kam,Jum,Sab', 'Lin,Lun,Mar,Miy,Huw,Biy,Sab'],
+  calNote: ['連日の予定は1本の帯で表示します。帯をタップすると詳細、日付をタップするとその日の一覧が出ます。斜線の帯は「仮」の予定です。', 'Multi-day plans are shown as one bar. Tap a bar for details, or a date for that day. Striped bars are tentative.', 'Lịch nhiều ngày hiển thị thành một thanh. Chạm vào thanh để xem chi tiết, chạm vào ngày để xem danh sách. Thanh sọc là lịch tạm thời.', 'Jadwal beberapa hari tampil sebagai satu bar. Ketuk bar untuk detail, atau tanggal untuk daftar hari itu. Bar bergaris = sementara.', 'Ang ilang-araw na iskedyul ay isang bar. I-tap ang bar para sa detalye, o ang petsa para sa listahan. Ang may guhit ay pansamantala.'],
+  daySched: ['{d} の予定', 'Schedule for {d}', 'Lịch ngày {d}', 'Jadwal {d}', 'Iskedyul sa {d}'],
+  noSched: ['予定はありません', 'No schedule', 'Không có lịch', 'Tidak ada jadwal', 'Walang iskedyul'],
+  close: ['閉じる', 'Close', 'Đóng', 'Tutup', 'Isara'],
+  moreN: ['+{n}件', '+{n}', '+{n}', '+{n}', '+{n}'],
+  f_site: ['案件名', 'Project', 'Công trình', 'Proyek', 'Proyekto'],
+  f_client: ['元請', 'Client', 'Nhà thầu chính', 'Kontraktor utama', 'Kontratista'],
+  f_when: ['日時', 'Date / time', 'Thời gian', 'Waktu', 'Petsa / oras'],
+  f_assignees: ['担当者', 'Assigned', 'Người phụ trách', 'Petugas', 'Nakatalaga'],
+  f_address: ['住所', 'Address', 'Địa chỉ', 'Alamat', 'Address'],
+  f_memo: ['備考', 'Notes', 'Ghi chú', 'Catatan', 'Tala'],
+  f_updated: ['更新', 'Updated', 'Cập nhật', 'Diperbarui', 'In-update'],
+  nobody: ['なし', 'None', 'Không có', 'Tidak ada', 'Wala'],
+  repTitle: ['日報の提出', 'Submit daily report', 'Gửi báo cáo ngày', 'Kirim laporan harian', 'Magsumite ng ulat'],
+  repDate: ['報告日', 'Date', 'Ngày báo cáo', 'Tanggal', 'Petsa'],
+  workType: ['作業区分', 'Work type', 'Loại công việc', 'Jenis kerja', 'Uri ng trabaho'],
+  wt_現場: ['現場', 'On-site', 'Công trường', 'Di lokasi', 'Sa site'],
+  wt_加工: ['加工', 'Workshop', 'Gia công', 'Bengkel', 'Workshop'],
+  project: ['案件(現場名)', 'Project (site)', 'Công trình', 'Proyek (lokasi)', 'Proyekto (site)'],
+  inout: ['入退場時間', 'Start / end time', 'Giờ vào / ra', 'Jam masuk / keluar', 'Oras ng pasok / labas'],
+  ot: ['通常残業', 'Overtime', 'Tăng ca', 'Lembur', 'Overtime'],
+  nightOt: ['深夜残業(22時〜翌5時)', 'Night overtime (22:00–5:00)', 'Tăng ca đêm (22:00–5:00)', 'Lembur malam (22.00–05.00)', 'Night OT (22:00–5:00)'],
+  hoursN: ['{n}時間', '{n} h', '{n} giờ', '{n} jam', '{n} oras'],
+  content: ['作業内容', 'Work done', 'Nội dung công việc', 'Uraian pekerjaan', 'Ginawang trabaho'],
+  contentPh: ['例:2F内装解体、産廃搬出2t車1台', 'e.g. 2F interior demolition, 1 truck of waste', 'Ví dụ: Tháo dỡ nội thất tầng 2, chở 1 xe rác', 'Contoh: Bongkar interior lt. 2, angkut 1 truk limbah', 'Hal.: Demolisyon sa 2F, 1 trak ng basura'],
+  expense: ['経費', 'Expenses', 'Chi phí', 'Biaya', 'Gastos'],
+  ex_なし: ['なし', 'None', 'Không có', 'Tidak ada', 'Wala'],
+  ex_駐車場代: ['駐車場代', 'Parking', 'Phí đỗ xe', 'Parkir', 'Paradahan'],
+  ex_高速代: ['高速代', 'Highway toll', 'Phí cao tốc', 'Tol', 'Toll'],
+  ex_ガソリン代: ['ガソリン代', 'Gasoline', 'Xăng', 'Bensin', 'Gasolina'],
+  ex_材料費: ['材料費', 'Materials', 'Vật liệu', 'Bahan', 'Materyales'],
+  ex_その他: ['その他', 'Other', 'Khác', 'Lainnya', 'Iba pa'],
+  amountPh: ['金額(円・税抜)', 'Amount (yen, excl. tax)', 'Số tiền (yên, chưa thuế)', 'Jumlah (yen, blm pajak)', 'Halaga (yen, walang buwis)'],
+  workersLbl: ['一緒に作業した人(選んだ人の日報もまとめて提出されます)', 'People who worked with you (their reports are submitted too)', 'Người làm cùng (báo cáo của họ cũng được gửi)', 'Rekan kerja (laporan mereka juga dikirim)', 'Mga kasama (isusumite rin ang kanilang ulat)'],
+  noOthers: ['他の作業員がいません', 'No other workers', 'Không có công nhân khác', 'Tidak ada pekerja lain', 'Walang ibang manggagawa'],
+  selAll: ['全員選択', 'Select all', 'Chọn tất cả', 'Pilih semua', 'Piliin lahat'],
+  selNone: ['選択解除', 'Clear', 'Bỏ chọn', 'Hapus pilihan', 'Alisin'],
+  selfToo: ['自分の日報も提出する', 'Also submit my own report', 'Gửi cả báo cáo của tôi', 'Kirim juga laporan saya', 'Isumite rin ang aking ulat'],
+  proxyNote: ['作業内容・時間・残業は全員同じ内容で登録されます。経費は提出者1人分だけに付きます。今日の予定の担当者は最初からチェックされます。', 'Work, times and overtime are saved the same for everyone. Expenses go only to the submitter. People assigned today are pre-checked.', 'Nội dung, giờ và tăng ca được lưu giống nhau cho mọi người. Chi phí chỉ tính cho người gửi. Người được phân công hôm nay đã được chọn sẵn.', 'Pekerjaan, jam, dan lembur disimpan sama untuk semua. Biaya hanya untuk pengirim. Petugas hari ini sudah dicentang.', 'Pareho ang trabaho, oras at OT para sa lahat. Sa nagsumite lang ang gastos. Naka-check na ang nakatalaga ngayon.'],
+  submit: ['保存(提出)', 'Submit', 'Gửi', 'Kirim', 'Isumite'],
+  repList: ['日報一覧', 'Daily reports', 'Danh sách báo cáo', 'Daftar laporan', 'Mga ulat'],
+  myReps: ['自分の日報', 'My reports', 'Báo cáo của tôi', 'Laporan saya', 'Aking mga ulat'],
+  th_date: ['日付', 'Date', 'Ngày', 'Tanggal', 'Petsa'],
+  th_author: ['作成者', 'Name', 'Người làm', 'Nama', 'Pangalan'],
+  th_type: ['区分', 'Type', 'Loại', 'Jenis', 'Uri'],
+  th_time: ['時間', 'Time', 'Giờ', 'Jam', 'Oras'],
+  th_ot: ['残業', 'Overtime', 'Tăng ca', 'Lembur', 'OT'],
+  proxyBy: ['{n}が代理提出', 'by {n}', '{n} gửi thay', 'oleh {n}', 'ni {n}'],
+  otNormal: ['通常', 'OT', 'TC', 'Lembur', 'OT'],
+  otNight: ['深夜', 'Night', 'Đêm', 'Malam', 'Gabi'],
+  submitted: ['{n}人分の日報({t})を提出しました', 'Submitted {n} report(s) ({t})', 'Đã gửi {n} báo cáo ({t})', '{n} laporan terkirim ({t})', 'Naisumite ang {n} ulat ({t})'],
+  skipped: ['(提出済みなどで除外:{s})', ' (skipped: {s})', ' (bỏ qua: {s})', ' (dilewati: {s})', ' (nilaktawan: {s})'],
+  mineTitle: ['自分の勤務記録', 'My work record', 'Hồ sơ làm việc', 'Catatan kerja saya', 'Aking rekord sa trabaho'],
+  daysWorked: ['出勤日数', 'Days worked', 'Số ngày làm', 'Hari kerja', 'Araw ng trabaho'],
+  hoursWorked: ['労働時間', 'Hours worked', 'Giờ làm', 'Jam kerja', 'Oras ng trabaho'],
+  daysN: ['{n}日', '{n} days', '{n} ngày', '{n} hari', '{n} araw'],
+  th_in: ['出勤', 'In', 'Vào', 'Masuk', 'Pasok'],
+  th_out: ['退勤', 'Out', 'Ra', 'Pulang', 'Labas'],
+  noRec: ['記録がありません', 'No records', 'Không có dữ liệu', 'Tidak ada catatan', 'Walang rekord'],
+  advTitle: ['前払いの申請', 'Request advance pay', 'Yêu cầu ứng lương', 'Ajukan kasbon', 'Humiling ng cash advance'],
+  advAmount: ['金額(円)', 'Amount (yen)', 'Số tiền (yên)', 'Jumlah (yen)', 'Halaga (yen)'],
+  advAmountPh: ['例:30000', 'e.g. 30000', 'Ví dụ: 30000', 'Contoh: 30000', 'Hal.: 30000'],
+  reason: ['理由', 'Reason', 'Lý do', 'Alasan', 'Dahilan'],
+  reasonPh: ['例:生活費のため', 'e.g. living expenses', 'Ví dụ: chi phí sinh hoạt', 'Contoh: biaya hidup', 'Hal.: gastusin sa bahay'],
+  apply: ['申請する', 'Send request', 'Gửi yêu cầu', 'Ajukan', 'Ipadala'],
+  advNote: ['管理者が承認すると、その月の給料から差し引かれます。結果はLINEでお知らせします。', 'Once approved, it is deducted from that month’s salary. You will be notified on LINE.', 'Khi được duyệt, số tiền sẽ được trừ vào lương tháng đó. Kết quả được báo qua LINE.', 'Setelah disetujui, akan dipotong dari gaji bulan itu. Hasilnya dikabarkan lewat LINE.', 'Kapag naaprubahan, ibabawas ito sa sahod ng buwang iyon. Ipapaalam sa LINE ang resulta.'],
+  history: ['申請の履歴', 'Request history', 'Lịch sử yêu cầu', 'Riwayat pengajuan', 'Kasaysayan ng hiling'],
+  thisMonthAdv: ['今月差し引かれる前払い', 'Deducted this month', 'Trừ trong tháng này', 'Dipotong bulan ini', 'Ibabawas ngayong buwan'],
+  th_status: ['状態', 'Status', 'Trạng thái', 'Status', 'Katayuan'],
+  th_amount: ['金額', 'Amount', 'Số tiền', 'Jumlah', 'Halaga'],
+  th_payMonth: ['差引月', 'Deduct month', 'Tháng trừ', 'Bulan potong', 'Buwan ng bawas'],
+  cancel: ['取消', 'Cancel', 'Hủy', 'Batal', 'Kanselahin'],
+  adv_申請中: ['申請中', 'Requested', 'Đang chờ', 'Diajukan', 'Hinihiling'],
+  adv_承認: ['承認', 'Approved', 'Đã duyệt', 'Disetujui', 'Inaprubahan'],
+  adv_却下: ['却下', 'Rejected', 'Từ chối', 'Ditolak', 'Tinanggihan'],
+  confirmApply: ['{a}円の前払いを申請しますか?', 'Request an advance of ¥{a}?', 'Yêu cầu ứng ¥{a}?', 'Ajukan kasbon ¥{a}?', 'Humiling ng ¥{a} na cash advance?'],
+  applied: ['申請しました。承認をお待ちください', 'Request sent. Please wait for approval.', 'Đã gửi yêu cầu. Vui lòng chờ duyệt.', 'Pengajuan terkirim. Mohon tunggu persetujuan.', 'Naipadala. Hintayin ang pag-apruba.'],
+  confirmCancel: ['この申請を取り消しますか?', 'Cancel this request?', 'Hủy yêu cầu này?', 'Batalkan pengajuan ini?', 'Kanselahin ang hiling na ito?'],
+  cancelled: ['取り消しました', 'Cancelled', 'Đã hủy', 'Dibatalkan', 'Nakansela'],
+  e_site: ['現場を選んでください', 'Please select a site', 'Vui lòng chọn công trường', 'Silakan pilih lokasi', 'Pumili ng site'],
+  e_open: ['退勤していない記録があります。先に退勤してください', 'You have not clocked out yet. Please clock out first.', 'Bạn chưa chấm công về. Hãy chấm công về trước.', 'Anda belum absen pulang. Silakan absen pulang dulu.', 'Hindi ka pa naka-time out. Mag-time out muna.'],
+  e_noIn: ['出勤の記録がありません', 'No clock-in record', 'Không có dữ liệu chấm công vào', 'Tidak ada catatan absen masuk', 'Walang rekord ng time in'],
+  e_dateSite: ['日付と現場を入力してください', 'Please enter the date and site', 'Vui lòng nhập ngày và công trường', 'Silakan isi tanggal dan lokasi', 'Ilagay ang petsa at site'],
+  e_content: ['作業内容を入力してください', 'Please enter the work done', 'Vui lòng nhập nội dung công việc', 'Silakan isi uraian pekerjaan', 'Ilagay ang ginawang trabaho'],
+  e_amount: ['金額を入力してください', 'Please enter the amount', 'Vui lòng nhập số tiền', 'Silakan isi jumlah', 'Ilagay ang halaga'],
+  e_name: ['氏名を入力してください', 'Please enter your name', 'Vui lòng nhập họ tên', 'Silakan isi nama', 'Ilagay ang pangalan'],
+  e_perm: ['この操作の権限がありません', 'You do not have permission', 'Bạn không có quyền', 'Anda tidak punya izin', 'Wala kang pahintulot'],
+  e_ot: ['残業時間は0.5時間単位で選んでください', 'Choose overtime in 0.5-hour steps', 'Chọn tăng ca theo bước 0,5 giờ', 'Pilih lembur per 0,5 jam', 'Pumili ng OT kada 0.5 oras'],
+  e_cancel: ['承認・却下済みの申請は取り消せません', 'Approved or rejected requests cannot be cancelled', 'Không thể hủy yêu cầu đã xử lý', 'Pengajuan yang sudah diproses tidak bisa dibatalkan', 'Hindi na makakansela ang naprosesong hiling'],
+  e_limit: ['今月の前払いの上限を超えます', 'This exceeds the monthly advance limit', 'Vượt quá hạn mức ứng lương tháng này', 'Melebihi batas kasbon bulan ini', 'Lampas sa limitasyon ngayong buwan'],
+  e_noRep: ['提出できる日報がありませんでした(提出済みの可能性があります)', 'No reports were submitted (maybe already submitted)', 'Không có báo cáo nào được gửi (có thể đã gửi rồi)', 'Tidak ada laporan terkirim (mungkin sudah dikirim)', 'Walang naisumite (baka naisumite na)'],
+  e_net: ['通信できませんでした。電波の良い場所でもう一度お試しください', 'Connection failed. Please try again where the signal is good.', 'Kết nối thất bại. Hãy thử lại ở nơi có sóng tốt.', 'Koneksi gagal. Coba lagi di tempat dengan sinyal bagus.', 'Nabigo ang koneksyon. Subukan muli sa lugar na may signal.'],
+};
+var L = 'ja';
+function t(key, vars) {
+  var a = D[key]; if (!a) return key;
+  var s = a[LANGS.indexOf(L)] || a[0];
+  if (vars) Object.keys(vars).forEach(function (k) { s = s.split('{' + k + '}').join(vars[k]); });
+  return s;
+}
+// サーバーの日本語エラーを、選んだ言語に置き換える
+var ERR_MAP = [['現場を選んでください', 'e_site'], ['退勤していない記録', 'e_open'], ['出勤の記録がありません', 'e_noIn'], ['日付と現場を入力', 'e_dateSite'],
+  ['作業内容を入力', 'e_content'], ['金額を入力', 'e_amount'], ['氏名を入力', 'e_name'], ['この操作の権限がありません', 'e_perm'], ['管理者の承認待ち', 'pendingTitle'],
+  ['残業時間は0.5時間単位', 'e_ot'], ['承認・却下済みの申請', 'e_cancel'], ['今月の前払いの上限', 'e_limit'], ['提出できる日報がありませんでした', 'e_noRep'], ['通信', 'e_net']];
+function tErr(msg) {
+  if (L === 'ja') return msg;
+  for (var i = 0; i < ERR_MAP.length; i++) if (String(msg).indexOf(ERR_MAP[i][0]) === 0) return t(ERR_MAP[i][1]);
+  return msg;
+}
+// 最初の言語:URLの ?lang= → 保存した設定 → LINEアプリの言語 → 日本語
+function pickLang(serverLang) {
+  var q = new URLSearchParams(location.search).get('lang');
+  if (LANGS.indexOf(q) >= 0) return q;
+  if (LANGS.indexOf(serverLang) >= 0) return serverLang;
+  try { var s = localStorage.getItem('lang'); if (LANGS.indexOf(s) >= 0) return s; } catch (e) {}
+  try { var g = (window.liff && liff.getLanguage ? liff.getLanguage() : navigator.language || '').slice(0, 2); if (g === 'fi') g = 'tl'; if (LANGS.indexOf(g) >= 0) return g; } catch (e) {}
+  return 'ja';
+}
+</script>
+
+<script>
 // ======== ここを自分の値に書き換える ========
 const CONFIG = {
   LIFF_ID: '2012496962-JpTTMjvg',                       // 例: 2001234567-AbCdEfGh
-  API_URL: 'https://script.google.com/macros/s/AKfycbxd5rbn6381uMURPTG9u-7UMgWtqmxEb3Cm6wck7fdmsTxxlmGHkidy1b0G7Vsl4l-Q/exec',          // 例: https://script.google.com/macros/s/xxxx/exec
+  API_URL: ''https://script.google.com/macros/s/AKfycbxd5rbn6381uMURPTG9u-7UMgWtqmxEb3Cm6wck7fdmsTxxlmGHkidy1b0G7Vsl4l-Q/exec',          // 例: https://script.google.com/macros/s/xxxx/exec
 };
 // ===========================================
 
@@ -136,7 +306,7 @@ const S = { me: null, sites: [], members: [], tab: 'home', calMonth: ym(new Date
 const $ = s => document.querySelector(s);
 const nz = (v, d) => (v === undefined || v === null ? d : v); // 古いスマホ向け(?? の代わり)
 const esc = v => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const yen = n => Number(n || 0).toLocaleString('ja-JP') + '円';
+const yen = n => (L === 'ja' ? Number(n || 0).toLocaleString('ja-JP') + '円' : '¥' + Number(n || 0).toLocaleString('en-US'));
 function ym(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); }
 function ymd(d) { return ym(d) + '-' + String(d.getDate()).padStart(2, '0'); }
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.style.display = 'block'; clearTimeout(t._h); t._h = setTimeout(() => t.style.display = 'none', 2600); }
@@ -154,7 +324,7 @@ async function api(action, params = {}) {
     body: JSON.stringify({ action, params, idToken: liff.getIDToken() }),
   });
   } catch (e) {
-    throw new Error(e && e.name === 'AbortError' ? '通信がタイムアウトしました。電波の良い場所でもう一度お試しください' : '通信できませんでした:' + (e && e.message));
+    throw new Error(t('e_net'));
   } finally { clearTimeout(timer); }
   const j = await res.json();
   if (!j.ok) {
@@ -163,37 +333,60 @@ async function api(action, params = {}) {
   }
   return j.data;
 }
-async function run(fn) { try { return await fn(); } catch (e) { toast(e.message); } }
+async function run(fn) { try { return await fn(); } catch (e) { toast(tErr(e.message)); } }
 
 // ---------- 起動 ----------
 (async function init() {
   try {
     await liff.init({ liffId: CONFIG.LIFF_ID });
     if (!liff.isLoggedIn()) { liff.login({ redirectUri: location.href }); return; }
+    applyLang(pickLang(''));
     const b = await api('bootstrap');
     S.me = b.me; S.sites = b.sites || []; S.members = b.members || [];
-    $('#who').textContent = S.me.registered ? `${S.me.name}(${S.me.roleLabel})` : '未登録';
+    // 言語:リッチメニューから ?lang= 付きで開いた・LINEの言語と保存が違う → サーバーに保存してLINEメニューも切替
+    const want = pickLang(S.me.lang);
+    applyLang(want);
+    const fromUrl = new URLSearchParams(location.search).get('lang');
+    if (fromUrl && LANGS.indexOf(fromUrl) >= 0 ? fromUrl !== S.me.lang : !S.me.lang) api('setLang', { lang: want }).catch(() => {});
     window.__started = true;
     if (!S.me.registered) return renderRegister();
-    if (S.me.role === 'pending') return renderMessage('管理者の承認待ちです', '管理者が権限を設定すると使えるようになります。しばらくしてから開き直してください。');
-    if (S.me.role === 'disabled') return renderMessage('利用停止中です', '管理者にお問い合わせください。');
+    if (S.me.role === 'pending') return renderMessage(t('pendingTitle'), t('pendingBody'));
+    if (S.me.role === 'disabled') return renderMessage(t('disabledTitle'), t('disabledBody'));
     const q = new URLSearchParams(location.search).get('tab');
     buildTabs(q);
   } catch (e) {
-    renderMessage('起動できませんでした', esc(e.message) + '<br>CONFIGのLIFF_ID / API_URL を確認してください。');
+    renderMessage(t('bootFail'), esc(tErr(e.message)) + '<br>CONFIGのLIFF_ID / API_URL を確認してください。');
   }
 })();
+
+// 言語を画面に反映(ヘッダーと言語選択)
+function applyLang(l) {
+  L = LANGS.indexOf(l) >= 0 ? l : 'ja';
+  try { localStorage.setItem('lang', L); } catch (e) {}
+  document.documentElement.lang = L;
+  $('#appName').textContent = t('appName');
+  $('#who').textContent = !S.me ? t('loading') : S.me.registered ? `${S.me.name}(${t('role_' + S.me.role)})` : t('unregistered');
+  $('#langSel').innerHTML = LANGS.map(k => `<option value="${k}" ${k === L ? 'selected' : ''}>${LANG_NAMES[k]}</option>`).join('');
+}
+document.addEventListener('change', e => {
+  if (e.target.id !== 'langSel') return;
+  const l = e.target.value;
+  applyLang(l);
+  if (S.me) { api('setLang', { lang: l }).then(() => toast(t('langChanged'))).catch(() => {}); S.me.lang = l; }
+  if ($('#tabs').innerHTML) buildTabs(S.tab); else if (S.me && !S.me.registered) renderRegister();
+  else if (S.me && S.me.role === 'pending') renderMessage(t('pendingTitle'), t('pendingBody'));
+});
 
 function renderMessage(title, body) { window.__started = true; $('#tabs').innerHTML = ''; $('#view').innerHTML = `<div class="card"><h2>${title}</h2><p>${body}</p></div>`; }
 
 function renderRegister() {
-  $('#view').innerHTML = `<div class="card"><h2>はじめに氏名を登録してください</h2>
-    <label>氏名(フルネーム)</label><input id="rname" placeholder="例:山田 太郎">
-    <button class="btn big" id="rbtn">登録する</button>
-    <p class="muted">登録後、管理者が権限を設定すると使えるようになります。</p></div>`;
+  $('#view').innerHTML = `<div class="card"><h2>${t('regTitle')}</h2>
+    <label>${t('regName')}</label><input id="rname" placeholder="${t('regPh')}">
+    <button class="btn big" id="rbtn">${t('regBtn')}</button>
+    <p class="muted">${t('regNote')}</p></div>`;
   $('#rbtn').onclick = () => run(async () => {
-    const me = await api('register', { name: $('#rname').value });
-    toast('登録しました'); location.reload(); return me;
+    const me = await api('register', { name: $('#rname').value, lang: L });
+    toast(t('registered')); location.reload(); return me;
   });
 }
 
@@ -209,14 +402,14 @@ const TABS = [
 ];
 function buildTabs(initial) {
   const tabs = TABS.filter(t => S.me.can[t.perm]);
-  $('#tabs').innerHTML = tabs.map(t => `<button data-t="${t.id}">${t.label}</button>`).join('');
+  $('#tabs').innerHTML = tabs.map(x => `<button data-t="${x.id}">${t('tab_' + x.id)}</button>`).join('');
   $('#tabs').onclick = e => { const t = e.target.dataset.t; if (t) show(t); };
   show(tabs.some(t => t.id === initial) ? initial : (S.me.can.edit && !liff.isInClient() ? 'cal' : 'home'));
 }
 function show(tab) {
   S.tab = tab; clearInterval(S.timer);
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === tab));
-  $('#view').innerHTML = '<div class="card">読み込み中…</div>';
+  $('#view').innerHTML = `<div class="card">${t('loading')}</div>`;
   ({ home: viewHome, cal: viewCal, report: viewReport, mine: viewMine, advance: viewAdvance, agg: viewAgg, money: viewMoney, admin: viewAdmin })[tab]();
 }
 const siteOptions = (sel, includeDone) => S.sites.filter(s => includeDone || s.status !== '完了')
@@ -224,28 +417,28 @@ const siteOptions = (sel, includeDone) => S.sites.filter(s => includeDone || s.s
 
 // ---------- 打刻 ----------
 async function viewHome() {
-  const t = await run(() => api('today')); if (!t) return;
-  const open = t.records.find(r => !r.clockOut);
-  const firstSite = (t.schedules[0] || {}).siteId;
+  const td = await run(() => api('today')); if (!td) return;
+  const open = td.records.find(r => !r.clockOut);
+  const firstSite = (td.schedules[0] || {}).siteId;
   $('#view').innerHTML = `
     <div class="card">
-      <div class="muted" style="text-align:center">${t.date}</div>
+      <div class="muted" style="text-align:center">${td.date}</div>
       <div class="clock" id="clk"></div>
-      ${open ? `<p style="text-align:center"><span class="pill">出勤中</span> ${esc(open.clockIn)}〜 ${esc((S.sites.find(s => s.siteId === open.siteId) || {}).name || '')}</p>
-        <button class="btn big red" id="out">退勤する</button>`
-      : `<label>現場</label><select id="site"><option value="">選択してください</option>${siteOptions(firstSite)}</select>
-        <button class="btn big" id="in">出勤する</button>`}
+      ${open ? `<p style="text-align:center"><span class="pill">${t('working')}</span> ${esc(open.clockIn)}〜 ${esc((S.sites.find(s => s.siteId === open.siteId) || {}).name || '')}</p>
+        <button class="btn big red" id="out">${t('clockOut')}</button>`
+      : `<label>${t('site')}</label><select id="site"><option value="">${t('select')}</option>${siteOptions(firstSite)}</select>
+        <button class="btn big" id="in">${t('clockIn')}</button>`}
     </div>
-    <div class="card"><h2>今日の予定</h2>${t.schedules.length ? t.schedules.map(evLine).join('') : '<p class="muted">今日の予定はありません</p>'}</div>
-    <div class="card"><h2>今日の打刻</h2>${t.records.length ? t.records.map(r => `<div class="list-item">${esc(r.clockIn)} 〜 ${esc(r.clockOut || '')} ${r.hours ? '(' + r.hours + 'h)' : ''}</div>`).join('') : '<p class="muted">まだありません</p>'}</div>`;
+    <div class="card"><h2>${t('todaySched')}</h2>${td.schedules.length ? td.schedules.map(evLine).join('') : `<p class="muted">${t('noTodaySched')}</p>`}</div>
+    <div class="card"><h2>${t('todayPunch')}</h2>${td.records.length ? td.records.map(r => `<div class="list-item">${esc(r.clockIn)} 〜 ${esc(r.clockOut || '')} ${r.hours ? '(' + r.hours + 'h)' : ''}</div>`).join('') : `<p class="muted">${t('none')}</p>`}</div>`;
   const tick = () => { const n = new Date(); const c = $('#clk'); if (c) c.textContent = n.toTimeString().slice(0, 8); };
   tick(); S.timer = setInterval(tick, 1000);
-  if ($('#in')) $('#in').onclick = () => run(async () => { await api('clockIn', { siteId: $('#site').value }); toast('出勤しました。今日も一日ご安全に!'); viewHome(); });
-  if ($('#out')) $('#out').onclick = () => run(async () => { const r = await api('clockOut'); toast(`退勤しました(${r.hours}時間)`); viewHome(); });
+  if ($('#in')) $('#in').onclick = () => run(async () => { await api('clockIn', { siteId: $('#site').value }); toast(t('inDone')); viewHome(); });
+  if ($('#out')) $('#out').onclick = () => run(async () => { const r = await api('clockOut'); toast(t('outDone', { h: r.hours })); viewHome(); });
 }
 function evLine(e) {
   return `<div class="list-item"><span class="sw" style="background:${esc(e.color)}"></span><b>${esc(e.siteName)}</b> ${esc(e.title)}
-    <span class="pill ${e.status === '仮' ? 'tmp' : ''}">${esc(e.status)}</span><br>
+    <span class="pill ${e.status === '仮' ? 'tmp' : ''}">${esc(t('st_' + e.status))}</span><br>
     <span class="muted">${esc(e.start.replace('T', ' '))} 〜 ${esc(e.end.replace('T', ' '))}${e.address ? ' / ' + esc(e.address) : ''}</span></div>`;
 }
 
@@ -275,7 +468,7 @@ async function viewCal() {
       bars += `<div class="bar ${s < w0 ? 'cl' : ''} ${en > w6 ? 'cr' : ''} ${e.status === '仮' ? 'tmp' : ''}" data-id="${esc(e.id)}"
         style="grid-column:${a + 1}/span ${b - a + 1};grid-row:${l + 1};background:${esc(e.color)}" title="${esc(e.siteName + ' ' + e.title)}">${e.status === '仮' ? '仮 ' : ''}${esc(e.siteName)} ${esc(e.title)}</div>`;
     });
-    hidden.forEach((n, i) => { if (n) bars += `<div class="more" data-d="${ymd(days[w0 + i])}" style="grid-column:${i + 1};grid-row:${MAXL + 1}">+${n}件</div>`; });
+    hidden.forEach((n, i) => { if (n) bars += `<div class="more" data-d="${ymd(days[w0 + i])}" style="grid-column:${i + 1};grid-row:${MAXL + 1}">${t('moreN', { n: n })}</div>`; });
     const bg = days.slice(w0, w0 + 7).map(d => {
       const ds = ymd(d);
       return `<div class="d ${d.getMonth() !== m - 1 ? 'other' : ''} ${ds === todayS ? 'today' : ''}" data-d="${ds}"><span class="num ${d.getDay() === 0 ? 'sun' : d.getDay() === 6 ? 'sat' : ''}">${d.getDate()}</span></div>`;
@@ -284,11 +477,11 @@ async function viewCal() {
   }).join('');
   $('#view').innerHTML = `<div class="card">
     <div class="calhead">
-      <div><button class="btn out sm" id="prev">‹</button> <b>${y}年${m}月</b> <button class="btn out sm" id="next">›</button> <button class="btn out sm" id="now">今月</button></div>
+      <div><button class="btn out sm" id="prev">‹</button> <b>${L === 'ja' ? y + '年' + m + '月' : m + '/' + y}</b> <button class="btn out sm" id="next">›</button> <button class="btn out sm" id="now">${t('thisMonth')}</button></div>
       ${S.me.can.edit ? '<button class="btn sm" id="add">+ スケジュール作成</button>' : ''}
     </div>
-    <div class="calw"><div class="wh">${['日', '月', '火', '水', '木', '金', '土'].map((w, i) => `<div class="${i === 0 ? 'sun' : i === 6 ? 'sat' : ''}">${w}</div>`).join('')}</div>${weeks}</div>
-    <p class="muted">連日の予定は1本の帯で表示します。帯をタップすると詳細、日付をタップするとその日の一覧が出ます。斜線の帯は「仮」の予定です。</p></div>`;
+    <div class="calw"><div class="wh">${t('weekdays').split(',').map((w, i) => `<div class="${i === 0 ? 'sun' : i === 6 ? 'sat' : ''}">${w}</div>`).join('')}</div>${weeks}</div>
+    <p class="muted">${t('calNote')}</p></div>`;
   $('#prev').onclick = () => { S.calMonth = ym(new Date(y, m - 2, 1)); viewCal(); };
   $('#next').onclick = () => { S.calMonth = ym(new Date(y, m, 1)); viewCal(); };
   $('#now').onclick = () => { S.calMonth = ym(new Date()); viewCal(); };
@@ -298,21 +491,21 @@ async function viewCal() {
     if (ev) return scheduleDetail(evs.find(x => x.id === ev.dataset.id));
     if (day) {
       const ds = day.dataset.d, list = evs.filter(x => x.start.slice(0, 10) <= ds && x.end.slice(0, 10) >= ds);
-      modal(`<h2>${ds} の予定</h2>${list.length ? list.map(evLine).join('') : '<p class="muted">予定はありません</p>'}
-        <div class="row" style="margin-top:12px">${S.me.can.edit ? `<button class="btn" id="dadd">この日に追加</button>` : ''}<button class="btn out" onclick="closeModal()">閉じる</button></div>`);
+      modal(`<h2>${t('daySched', { d: ds })}</h2>${list.length ? list.map(evLine).join('') : `<p class="muted">${t('noSched')}</p>`}
+        <div class="row" style="margin-top:12px">${S.me.can.edit ? `<button class="btn" id="dadd">この日に追加</button>` : ''}<button class="btn out" onclick="closeModal()">${t('close')}</button></div>`);
       if ($('#dadd')) $('#dadd').onclick = () => scheduleForm({ start: ds + 'T08:30', end: ds + 'T17:00' });
     }
   };
 }
 function scheduleDetail(e) {
-  modal(`<span class="pill ${e.status === '仮' ? 'tmp' : ''}">${esc(e.status)}</span> <b style="font-size:17px">${esc(e.title)}</b>
-    <h3>案件名</h3>${esc(e.siteName)}${e.client ? '(元請:' + esc(e.client) + ')' : ''}
-    <h3>日時</h3>${esc(e.start.replace('T', ' '))} 〜 ${esc(e.end.replace('T', ' '))}
-    <h3>担当者</h3>${esc(e.assigneeNames.join('、') || 'なし')}
-    ${e.address ? `<h3>住所</h3><a href="https://maps.google.com/?q=${encodeURIComponent(e.address)}" target="_blank">${esc(e.address)}</a>` : ''}
-    ${e.memo ? `<h3>備考</h3>${esc(e.memo)}` : ''}
-    <p class="muted">更新:${esc(e.updatedBy)} ${esc(e.updatedAt)}</p>
-    <div class="row">${S.me.can.edit ? `<button class="btn" id="ed">編集</button><button class="btn red" id="del">削除</button>` : ''}<button class="btn out" onclick="closeModal()">閉じる</button></div>`);
+  modal(`<span class="pill ${e.status === '仮' ? 'tmp' : ''}">${esc(t('st_' + e.status))}</span> <b style="font-size:17px">${esc(e.title)}</b>
+    <h3>${t('f_site')}</h3>${esc(e.siteName)}${e.client ? '(' + t('f_client') + ':' + esc(e.client) + ')' : ''}
+    <h3>${t('f_when')}</h3>${esc(e.start.replace('T', ' '))} 〜 ${esc(e.end.replace('T', ' '))}
+    <h3>${t('f_assignees')}</h3>${esc(e.assigneeNames.join(', ') || t('nobody'))}
+    ${e.address ? `<h3>${t('f_address')}</h3><a href="https://maps.google.com/?q=${encodeURIComponent(e.address)}" target="_blank">${esc(e.address)}</a>` : ''}
+    ${e.memo ? `<h3>${t('f_memo')}</h3>${esc(e.memo)}` : ''}
+    <p class="muted">${t('f_updated')}:${esc(e.updatedBy)} ${esc(e.updatedAt)}</p>
+    <div class="row">${S.me.can.edit ? `<button class="btn" id="ed">編集</button><button class="btn red" id="del">削除</button>` : ''}<button class="btn out" onclick="closeModal()">${t('close')}</button></div>`);
   if ($('#ed')) $('#ed').onclick = () => scheduleForm(e);
   if ($('#del')) $('#del').onclick = () => { if (confirm('この予定を削除しますか?')) run(async () => { await api('deleteSchedule', { id: e.id }); closeModal(); toast('削除しました'); viewCal(); }); };
 }
@@ -347,24 +540,24 @@ async function viewReport() {
   const today = await run(() => api('today')) || { records: [], schedules: [] };
   const att = today.records[0] || {};
   const list = await run(() => api('reports', { month })) || [];
-  $('#view').innerHTML = `<div class="card"><h2>日報の提出</h2>
-    <label>報告日 *</label><input type="date" id="r_date" value="${ymd(new Date())}">
-    <label>作業区分 *</label><div class="seg" id="r_type" style="margin-bottom:0"><button type="button" data-wt="現場" class="on">現場</button><button type="button" data-wt="加工">加工</button></div>
-    <label>案件(現場名) *</label><select id="r_site"><option value="">選択してください</option>${siteOptions(att.siteId || (today.schedules[0] || {}).siteId)}</select>
-    <label>入退場時間</label><div class="row"><input type="time" id="r_s" value="${esc(att.clockIn || '08:00')}"><input type="time" id="r_e" value="${esc(att.clockOut || '17:00')}"></div>
-    <div class="row"><div><label>通常残業</label><select id="r_ot">${[0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8].map(v => `<option value="${v}">${v ? v + '時間' : 'なし'}</option>`).join('')}</select></div><div><label>深夜残業(22時〜翌5時)</label><select id="r_nt">${[0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8].map(v => `<option value="${v}">${v ? v + '時間' : 'なし'}</option>`).join('')}</select></div></div>
-    <label>作業内容 *</label><textarea id="r_c" placeholder="例:2F内装解体、産廃搬出2t車1台"></textarea>
-    <label>経費</label><div class="row"><select id="r_xt"><option value="">なし</option><option>駐車場代</option><option>高速代</option><option>ガソリン代</option><option>材料費</option><option>その他</option></select>
-    <input type="number" id="r_xa" placeholder="金額(円・税抜)" inputmode="numeric"></div>
-    ${S.me.can.proxy ? `<label>一緒に作業した人(選んだ人の日報もまとめて提出されます)</label>
-      <div class="chips" id="r_workers">${S.members.filter(u => u.userId !== S.me.userId).map(u => `<label><input type="checkbox" value="${esc(u.userId)}">${esc(u.name)}</label>`).join('') || '<span class="muted">他の作業員がいません</span>'}</div>
-      <div class="row" style="margin-top:6px"><button class="btn out sm" id="r_all" type="button">全員選択</button><button class="btn out sm" id="r_none" type="button">選択解除</button></div>
-      <div class="chips" style="margin-top:8px"><label><input type="checkbox" id="r_self" checked>自分の日報も提出する</label></div>
-      <p class="muted">作業内容・時間・残業は全員同じ内容で登録されます。経費は提出者1人分だけに付きます。今日の予定の担当者は最初からチェックされます。</p>` : ''}
-    <button class="btn big" id="r_save">保存(提出)</button></div>
-    <div class="card"><div class="calhead"><h2 style="margin:0">${S.me.can.viewAll ? '日報一覧' : '自分の日報'}</h2><input type="month" id="r_m" value="${month}" style="width:auto"></div>
-    <div class="scroll"><table><tr><th>日付</th><th>作成者</th><th>区分</th><th>現場</th><th>時間</th><th>残業</th><th>作業内容</th><th class="n">経費</th></tr>
-    ${list.map(r => `<tr><td>${esc(r.date)}</td><td>${esc(r.name)}${r.submittedBy ? `<br><span class="muted" style="font-size:11px">${esc(r.submittedBy)}が代理提出</span>` : ''}</td><td><span class="pill ${r.workType === '加工' ? 'blue' : ''}">${esc(r.workType || '現場')}</span></td><td>${esc(r.siteName)}</td><td>${esc(r.start)}-${esc(r.end)}</td><td>${r.otHours ? '通常' + esc(r.otHours) + 'h' : ''}${r.otHours && r.nightHours ? '<br>' : ''}${r.nightHours ? '深夜' + esc(r.nightHours) + 'h' : ''}</td><td style="white-space:normal;min-width:180px">${esc(r.content)}</td><td class="n">${r.expenseAmount ? esc(r.expenseType) + ' ' + yen(r.expenseAmount) : ''}</td></tr>`).join('') || '<tr><td colspan="8" class="muted">まだありません</td></tr>'}
+  $('#view').innerHTML = `<div class="card"><h2>${t('repTitle')}</h2>
+    <label>${t('repDate')} *</label><input type="date" id="r_date" value="${ymd(new Date())}">
+    <label>${t('workType')} *</label><div class="seg" id="r_type" style="margin-bottom:0"><button type="button" data-wt="現場" class="on">${t('wt_現場')}</button><button type="button" data-wt="加工">${t('wt_加工')}</button></div>
+    <label>${t('project')} *</label><select id="r_site"><option value="">${t('select')}</option>${siteOptions(att.siteId || (today.schedules[0] || {}).siteId)}</select>
+    <label>${t('inout')}</label><div class="row"><input type="time" id="r_s" value="${esc(att.clockIn || '08:00')}"><input type="time" id="r_e" value="${esc(att.clockOut || '17:00')}"></div>
+    <div class="row"><div><label>${t('ot')}</label><select id="r_ot">${[0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8].map(v => `<option value="${v}">${v ? t('hoursN', { n: v }) : t('nobody')}</option>`).join('')}</select></div><div><label>${t('nightOt')}</label><select id="r_nt">${[0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8].map(v => `<option value="${v}">${v ? t('hoursN', { n: v }) : t('nobody')}</option>`).join('')}</select></div></div>
+    <label>${t('content')} *</label><textarea id="r_c" placeholder="${t('contentPh')}"></textarea>
+    <label>${t('expense')}</label><div class="row"><select id="r_xt"><option value="">${t('ex_なし')}</option>${['駐車場代', '高速代', 'ガソリン代', '材料費', 'その他'].map(x => `<option value="${x}">${t('ex_' + x)}</option>`).join('')}</select>
+    <input type="number" id="r_xa" placeholder="${t('amountPh')}" inputmode="numeric"></div>
+    ${S.me.can.proxy ? `<label>${t('workersLbl')}</label>
+      <div class="chips" id="r_workers">${S.members.filter(u => u.userId !== S.me.userId).map(u => `<label><input type="checkbox" value="${esc(u.userId)}">${esc(u.name)}</label>`).join('') || `<span class="muted">${t('noOthers')}</span>`}</div>
+      <div class="row" style="margin-top:6px"><button class="btn out sm" id="r_all" type="button">${t('selAll')}</button><button class="btn out sm" id="r_none" type="button">${t('selNone')}</button></div>
+      <div class="chips" style="margin-top:8px"><label><input type="checkbox" id="r_self" checked>${t('selfToo')}</label></div>
+      <p class="muted">${t('proxyNote')}</p>` : ''}
+    <button class="btn big" id="r_save">${t('submit')}</button></div>
+    <div class="card"><div class="calhead"><h2 style="margin:0">${S.me.can.viewAll ? t('repList') : t('myReps')}</h2><input type="month" id="r_m" value="${month}" style="width:auto"></div>
+    <div class="scroll"><table><tr><th>${t('th_date')}</th><th>${t('th_author')}</th><th>${t('th_type')}</th><th>${t('site')}</th><th>${t('th_time')}</th><th>${t('th_ot')}</th><th>${t('content')}</th><th class="n">${t('expense')}</th></tr>
+    ${list.map(r => `<tr><td>${esc(r.date)}</td><td>${esc(r.name)}${r.submittedBy ? `<br><span class="muted" style="font-size:11px">${esc(t('proxyBy', { n: r.submittedBy }))}</span>` : ''}</td><td><span class="pill ${r.workType === '加工' ? 'blue' : ''}">${esc(t('wt_' + (r.workType || '現場')))}</span></td><td>${esc(r.siteName)}</td><td>${esc(r.start)}-${esc(r.end)}</td><td>${r.otHours ? t('otNormal') + ' ' + esc(r.otHours) + 'h' : ''}${r.otHours && r.nightHours ? '<br>' : ''}${r.nightHours ? t('otNight') + ' ' + esc(r.nightHours) + 'h' : ''}</td><td style="white-space:normal;min-width:180px">${esc(r.content)}</td><td class="n">${r.expenseAmount ? esc(t('ex_' + r.expenseType)) + ' ' + yen(r.expenseAmount) : ''}</td></tr>`).join('') || `<tr><td colspan="8" class="muted">${t('none')}</td></tr>`}
     </table></div></div>`;
   document.querySelectorAll('[data-wt]').forEach(b => b.onclick = () => document.querySelectorAll('[data-wt]').forEach(x => x.classList.toggle('on', x === b)));
   $('#r_m').onchange = e => { S.repMonth = e.target.value; viewReport(); };
@@ -383,7 +576,7 @@ async function viewReport() {
     const workerIds = [...document.querySelectorAll('#r_workers input:checked')].map(c => c.value);
     const r = await api('submitReport', { date: $('#r_date').value, siteId: $('#r_site').value, start: $('#r_s').value, end: $('#r_e').value, content: $('#r_c').value, expenseType: $('#r_xt').value, expenseAmount: $('#r_xa').value,
       workerIds, includeSelf: $('#r_self') ? $('#r_self').checked : true, workType: document.querySelector('[data-wt].on').dataset.wt, otHours: $('#r_ot').value, nightHours: $('#r_nt').value });
-    toast(`${r.count}人分の日報(${document.querySelector('[data-wt].on').dataset.wt})を提出しました` + (r.skipped.length ? `(提出済みなどで除外:${r.skipped.join('、')})` : ''));
+    toast(t('submitted', { n: r.count, t: t('wt_' + document.querySelector('[data-wt].on').dataset.wt) }) + (r.skipped.length ? t('skipped', { s: r.skipped.join(', ') }) : ''));
     viewReport();
   });
 }
@@ -392,10 +585,10 @@ async function viewReport() {
 async function viewMine() {
   const month = S.mineMonth || ym(new Date());
   const d = await run(() => api('myAttendance', { month })); if (!d) return;
-  $('#view').innerHTML = `<div class="card"><div class="calhead"><h2 style="margin:0">自分の勤務記録</h2><input type="month" id="mm" value="${month}" style="width:auto"></div>
-    <div class="stats"><div class="stat">出勤日数<b>${d.days}日</b></div><div class="stat">労働時間<b>${d.hours}h</b></div></div>
-    <div class="scroll" style="margin-top:12px"><table><tr><th>日付</th><th>現場</th><th>出勤</th><th>退勤</th><th class="n">時間</th></tr>
-    ${d.records.map(r => `<tr><td>${esc(r.date)}</td><td>${esc(r.siteName)}</td><td>${esc(r.clockIn)}</td><td>${esc(r.clockOut || '—')}</td><td class="n">${esc(r.hours)}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">記録がありません</td></tr>'}</table></div></div>`;
+  $('#view').innerHTML = `<div class="card"><div class="calhead"><h2 style="margin:0">${t('mineTitle')}</h2><input type="month" id="mm" value="${month}" style="width:auto"></div>
+    <div class="stats"><div class="stat">${t('daysWorked')}<b>${t('daysN', { n: d.days })}</b></div><div class="stat">${t('hoursWorked')}<b>${d.hours}h</b></div></div>
+    <div class="scroll" style="margin-top:12px"><table><tr><th>${t('th_date')}</th><th>${t('site')}</th><th>${t('th_in')}</th><th>${t('th_out')}</th><th class="n">${t('th_time')}</th></tr>
+    ${d.records.map(r => `<tr><td>${esc(r.date)}</td><td>${esc(r.siteName)}</td><td>${esc(r.clockIn)}</td><td>${esc(r.clockOut || '—')}</td><td class="n">${esc(r.hours)}</td></tr>`).join('') || `<tr><td colspan="5" class="muted">${t('noRec')}</td></tr>`}</table></div></div>`;
   $('#mm').onchange = e => { S.mineMonth = e.target.value; viewMine(); };
 }
 
@@ -489,25 +682,25 @@ function advanceDecide(v) {
 async function viewAdvance() {
   const list = await run(() => api('myAdvances')) || [];
   const m = ym(new Date());
-  const thisMonth = list.filter(a => a.status === '承認' && a.payMonth === m).reduce((t, a) => t + Number(a.amount || 0), 0);
-  $('#view').innerHTML = `<div class="card"><h2>前払いの申請</h2>
-    <label>金額(円) *</label><input type="number" id="ad_amt" inputmode="numeric" placeholder="例:30000">
-    <label>理由</label><input id="ad_reason" placeholder="例:生活費のため">
-    <button class="btn big" id="ad_go">申請する</button>
-    <p class="muted">管理者が承認すると、その月の給料から差し引かれます。結果はLINEでお知らせします。</p></div>
-    <div class="card"><h2>申請の履歴</h2>
-    <div class="stats"><div class="stat">今月差し引かれる前払い<b>${yen(thisMonth)}</b></div></div>
-    <div class="scroll" style="margin-top:10px"><table><tr><th>申請日</th><th class="n">金額</th><th>状態</th><th>差引月</th><th></th></tr>
-    ${list.map(a => `<tr><td>${esc(a.date)}</td><td class="n">${num(a.amount)}円</td>
-      <td><span class="pill ${a.status === '申請中' ? 'tmp' : a.status === '却下' ? 'red' : ''}">${esc(a.status)}</span>${a.memo ? `<br><span class="muted" style="font-size:11px">${esc(a.memo)}</span>` : ''}</td>
-      <td>${a.status === '承認' ? esc(a.payMonth) : ''}</td><td>${a.status === '申請中' ? `<button class="btn out sm" data-cx="${esc(a.id)}">取消</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">まだありません</td></tr>'}
+  const thisMonth = list.filter(a => a.status === '承認' && a.payMonth === m).reduce((s, a) => s + Number(a.amount || 0), 0);
+  $('#view').innerHTML = `<div class="card"><h2>${t('advTitle')}</h2>
+    <label>${t('advAmount')} *</label><input type="number" id="ad_amt" inputmode="numeric" placeholder="${t('advAmountPh')}">
+    <label>${t('reason')}</label><input id="ad_reason" placeholder="${t('reasonPh')}">
+    <button class="btn big" id="ad_go">${t('apply')}</button>
+    <p class="muted">${t('advNote')}</p></div>
+    <div class="card"><h2>${t('history')}</h2>
+    <div class="stats"><div class="stat">${t('thisMonthAdv')}<b>${yen(thisMonth)}</b></div></div>
+    <div class="scroll" style="margin-top:10px"><table><tr><th>${t('th_date')}</th><th class="n">${t('th_amount')}</th><th>${t('th_status')}</th><th>${t('th_payMonth')}</th><th></th></tr>
+    ${list.map(a => `<tr><td>${esc(a.date)}</td><td class="n">${yen(a.amount)}</td>
+      <td><span class="pill ${a.status === '申請中' ? 'tmp' : a.status === '却下' ? 'red' : ''}">${esc(t('adv_' + a.status))}</span>${a.memo ? `<br><span class="muted" style="font-size:11px">${esc(a.memo)}</span>` : ''}</td>
+      <td>${a.status === '承認' ? esc(a.payMonth) : ''}</td><td>${a.status === '申請中' ? `<button class="btn out sm" data-cx="${esc(a.id)}">${t('cancel')}</button>` : ''}</td></tr>`).join('') || `<tr><td colspan="5" class="muted">${t('none')}</td></tr>`}
     </table></div></div>`;
   $('#ad_go').onclick = () => run(async () => {
-    if (!confirm(`${num($('#ad_amt').value)}円の前払いを申請しますか?`)) return;
+    if (!confirm(t('confirmApply', { a: num($('#ad_amt').value) }))) return;
     await api('requestAdvance', { amount: $('#ad_amt').value, reason: $('#ad_reason').value });
-    toast('申請しました。承認をお待ちください'); viewAdvance();
+    toast(t('applied')); viewAdvance();
   });
-  document.querySelectorAll('[data-cx]').forEach(b => b.onclick = () => { if (confirm('この申請を取り消しますか?')) run(async () => { await api('cancelAdvance', { id: b.dataset.cx }); toast('取り消しました'); viewAdvance(); }); });
+  document.querySelectorAll('[data-cx]').forEach(b => b.onclick = () => { if (confirm(t('confirmCancel'))) run(async () => { await api('cancelAdvance', { id: b.dataset.cx }); toast(t('cancelled')); viewAdvance(); }); });
 }
 
 const TBL = {};
@@ -528,21 +721,21 @@ function csv(key) {
 // ---------- 管理(案件・ユーザー) ----------
 async function viewAdmin() {
   S.sites = await run(() => api('sites')) || S.sites;
-  const users = S.me.can.admin ? (await run(() => api('users')) || []) : null;
+  const users = S.me.can.users ? (await run(() => api('users')) || []) : null;
   const ROLE = { admin: '管理者', office: '事務', foreman: '職長', worker: '職人', pending: '承認待ち', disabled: '停止' };
   $('#view').innerHTML = `<div class="card"><div class="calhead"><h2 style="margin:0">案件一覧</h2><button class="btn sm" id="sadd">+ 案件を作成</button></div>
     <div class="scroll"><table><tr><th>色</th><th>案件名</th><th>元請</th><th>区分</th><th>住所</th><th>状態</th><th></th></tr>
     ${S.sites.map(s => `<tr><td><span class="sw" style="background:${esc(s.color)}"></span></td><td>${esc(s.name)}</td><td>${esc(s.client)}</td><td>${esc(s.contractType || '請負')}${s.contractType === '常用' && s.unitPrice ? '<br><span class="muted">' + num(s.unitPrice) + '円/人工</span>' : ''}</td><td>${esc(s.address)}</td><td>${esc(s.status)}</td><td><button class="btn out sm" data-s="${esc(s.siteId)}">編集</button></td></tr>`).join('') || '<tr><td colspan="7" class="muted">まだありません</td></tr>'}
     </table></div></div>
-    ${users ? `<div class="card"><h2>ユーザーと権限(管理者のみ)</h2>
+    ${users ? `<div class="card"><h2>ユーザーと権限(管理者・事務)</h2>
       <p class="muted">新しく登録した人は「承認待ち」です。権限を選ぶと即反映されます。</p>
       <div class="scroll"><table><tr><th>氏名</th><th>権限</th><th>日当(円)</th><th>登録日時</th></tr>
-      ${users.map(u => `<tr><td>${esc(u.name)}${u.userId === S.me.userId ? '(自分)' : ''}</td><td><select data-u="${esc(u.userId)}" style="width:auto">${Object.keys(ROLE).map(k => `<option value="${k}" ${k === u.role ? 'selected' : ''}>${ROLE[k]}</option>`).join('')}</select></td>
+      ${users.map(u => `<tr><td>${esc(u.name)}${u.userId === S.me.userId ? '(自分)' : ''}</td><td><select data-u="${esc(u.userId)}" style="width:auto" ${!S.me.can.admin && u.role === 'admin' ? 'disabled' : ''}>${Object.keys(ROLE).filter(k => S.me.can.admin || k !== 'admin' || u.role === 'admin').map(k => `<option value="${k}" ${k === u.role ? 'selected' : ''}>${ROLE[k]}</option>`).join('')}</select></td>
         <td><input type="number" data-w="${esc(u.userId)}" value="${esc(u.dailyWage || '')}" placeholder="例:18000" style="width:110px"></td><td>${esc(u.createdAt)}</td></tr>`).join('')}
       </table></div>
       <p class="muted">日当は原価管理の「労務費」(打刻か日報がある日 × 日当)に使います。職人本人には表示されません。</p>
       <h3>権限でできること</h3>
-      <p class="muted">管理者:すべて+権限変更 / 事務:案件・予定の編集、集計、全員の日報 / 職長:全員の予定と日報を閲覧、打刻・日報 / 職人:自分の予定・打刻・日報のみ / 停止:利用不可</p></div>` : ''}`;
+      <p class="muted">管理者:すべて / 事務:管理者の付け外し以外すべて(案件・予定の編集、集計、お金・原価、ユーザーの承認・日当) / 職長:全員の予定と日報を閲覧、打刻・日報 / 職人:自分の予定・打刻・日報のみ / 停止:利用不可</p></div>` : ''}`;
   $('#sadd').onclick = () => siteForm({});
   document.querySelectorAll('[data-s]').forEach(b => b.onclick = () => siteForm(S.sites.find(s => s.siteId === b.dataset.s)));
   document.querySelectorAll('[data-u]').forEach(sel => sel.onchange = () => run(async () => { await api('setUser', { userId: sel.dataset.u, role: sel.value }); toast('権限を変更しました'); }));
