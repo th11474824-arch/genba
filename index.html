@@ -119,6 +119,8 @@
     .paper{margin:0 auto}
     @page{size:A4;margin:12mm}
   }
+  .samebox{display:flex;gap:12px;align-items:center;justify-content:space-between;background:#fff7e6;border:2px solid #f59e0b;border-radius:10px;padding:12px;margin:0 0 10px}
+  .samebox .btn{flex:0 0 auto;background:#d97706}
 </style>
 </head>
 <body>
@@ -866,6 +868,14 @@ async function viewAdmin() {
   S.clients = await run(() => api('clients')) || [];
   const users = S.me.can.users ? (await run(() => api('users')) || []) : null;
   const ROLE = { admin: '管理者', office: '事務', foreman: '職長', worker: '職人', pending: '承認待ち', disabled: '停止' };
+  // 承認待ち(LINE登録)と同じ名前の「未連携(手動追加)」の人を探す(空白の有無は無視)
+  const nk = n => String(n || '').replace(/[\s\u3000]/g, '');
+  const sameName = {};
+  (users || []).filter(u => u.line && u.role === 'pending').forEach(p => {
+    const m = users.filter(u => !u.line && u.role !== 'disabled' && nk(u.name) === nk(p.name));
+    if (m.length) sameName[p.userId] = m;
+  });
+  const matchIds = Object.keys(sameName);
   $('#view').innerHTML = `<div class="card"><div class="calhead"><h2 style="margin:0">案件一覧</h2><button class="btn sm" id="sadd">+ 案件を作成</button></div>
     <div class="scroll"><table><tr><th>色</th><th>案件名</th><th>元請</th><th>区分</th><th>住所</th><th>状態</th><th></th></tr>
     ${S.sites.map(s => `<tr><td><span class="sw" style="background:${esc(s.color)}"></span></td><td>${esc(s.name)}</td><td>${esc(s.client)}</td><td>${esc(s.contractType || '請負')}${s.contractType === '常用' && s.unitPrice ? '<br><span class="muted">' + num(s.unitPrice) + '円/人工</span>' : ''}</td><td>${esc(s.address)}</td><td>${esc(s.status)}</td><td><button class="btn out sm" data-s="${esc(s.siteId)}">編集</button></td></tr>`).join('') || '<tr><td colspan="7" class="muted">まだありません</td></tr>'}
@@ -876,10 +886,11 @@ async function viewAdmin() {
       ${S.clients.map(c => `<tr><td><input type="color" data-cc="${esc(c.name)}" value="${esc(c.color || '#3b82f6')}" style="width:56px;height:36px;padding:2px"></td><td>${esc(c.name)}</td><td class="n">${c.sites}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">まだありません(案件で元請を入れると自動で追加されます)</td></tr>'}
       </table></div></div>
     ${users ? `<div class="card"><div class="calhead"><h2 style="margin:0">ユーザーと権限(管理者・事務)</h2><button class="btn sm" id="uadd">+ 作業員を追加</button></div>
+      ${matchIds.map(pid => { const p = users.find(u => u.userId === pid); return `<div class="samebox"><div><b>${esc(p.name)}</b> さんがLINEから申請しています。同じ名前の手動登録があります。<br><span class="muted">本人なら、紐付けると1人にまとまり、手動登録の権限(${esc(ROLE[sameName[pid][0].role])})で承認されます。記録も引き継がれます。</span></div><button class="btn sm" data-same="${esc(pid)}">紐付ける</button></div>`; }).join('')}
       <p class="muted">LINEから登録した人は「承認待ち」です。権限を選ぶと即反映されます。LINEを使わない人は「+ 作業員を追加」で名前だけ登録できます(予定の担当・代理の日報・給料計算・出勤簿に出ます)。</p>
       <div class="scroll"><table><tr><th>氏名</th><th>LINE</th><th>権限</th><th>日当(円)</th><th>給料らくだ社員コード</th><th>登録日時</th></tr>
       ${users.map(u => `<tr><td><input data-n="${esc(u.userId)}" value="${esc(u.name)}" style="width:130px">${u.userId === S.me.userId ? '<span class="muted">(自分)</span>' : ''}</td>
-        <td>${u.line ? '<span class="muted">連携済</span>' : `<span style="color:#b45309">未連携</span><br><button class="btn out sm" data-lk="${esc(u.userId)}">LINEと紐付け</button>`}</td><td><select data-u="${esc(u.userId)}" style="width:auto" ${!S.me.can.admin && u.role === 'admin' ? 'disabled' : ''}>${Object.keys(ROLE).filter(k => S.me.can.admin || k !== 'admin' || u.role === 'admin').map(k => `<option value="${k}" ${k === u.role ? 'selected' : ''}>${ROLE[k]}</option>`).join('')}</select></td>
+        <td>${sameName[u.userId] ? `<span style="color:#b45309;font-weight:700;white-space:nowrap">同名の手動登録あり</span><br><button class="btn sm" style="background:#d97706" data-same="${esc(u.userId)}">紐付ける</button>` : u.line ? '<span class="muted">連携済</span>' : `<span style="color:#b45309">未連携</span><br><button class="btn out sm" data-lk="${esc(u.userId)}">LINEと紐付け</button>`}</td><td><select data-u="${esc(u.userId)}" style="width:auto" ${!S.me.can.admin && u.role === 'admin' ? 'disabled' : ''}>${Object.keys(ROLE).filter(k => S.me.can.admin || k !== 'admin' || u.role === 'admin').map(k => `<option value="${k}" ${k === u.role ? 'selected' : ''}>${ROLE[k]}</option>`).join('')}</select></td>
         <td><input type="number" data-w="${esc(u.userId)}" value="${esc(u.dailyWage || '')}" placeholder="例:18000" style="width:110px"></td><td><input data-ec="${esc(u.userId)}" value="${esc(u.empCode || '')}" placeholder="例:8" style="width:90px"></td><td>${esc(u.createdAt)}</td></tr>`).join('')}
       </table></div>
       <p class="muted">日当は原価管理の「労務費」(打刻か日報がある日 × 日当)に使います。職人本人には表示されません。給料らくだ社員コードは、給料らくだの「社員No.」と同じ番号を入れます(KINTAI6.CSVで使います)。</p>
@@ -917,6 +928,21 @@ async function viewAdmin() {
       const m = S.members.find(x => x.userId === inp.dataset.n); if (m) m.name = inp.value.trim();
       toast('氏名を変更しました');
     }));
+    const doLink = (manualId, lineId) => run(async () => {
+      const list = await api('linkUser', { manualId: manualId, lineId: lineId });
+      S.members = list.filter(u => ['admin', 'office', 'foreman', 'worker'].indexOf(u.role) >= 0).map(u => ({ userId: u.userId, name: u.name }));
+      closeModal(); toast('紐付けました'); viewAdmin();
+    });
+    document.querySelectorAll('[data-same]').forEach(b => b.onclick = () => {
+      const p = users.find(u => u.userId === b.dataset.same), ms = sameName[p.userId];
+      modal(`<h2>紐付けの確認</h2>
+        <p>LINEから申請した「<b>${esc(p.name)}</b>」さん(${esc(p.createdAt)})を、手動登録の人とまとめます。</p>
+        ${ms.length > 1 ? `<label>手動登録の人(同じ名前が${ms.length}人います)</label><select id="sm_to">${ms.map(m => `<option value="${esc(m.userId)}">${esc(m.name)}(${ROLE[m.role]}・社員コード${esc(m.empCode || 'なし')}・${esc(m.createdAt)})</option>`).join('')}</select>`
+          : `<p>手動登録:<b>${esc(ms[0].name)}</b>(${ROLE[ms[0].role]}・日当${ms[0].dailyWage ? num(ms[0].dailyWage) + '円' : '未設定'}・社員コード${esc(ms[0].empCode || 'なし')})</p>`}
+        <p class="muted">名前が同じだけで別人のこともあります。本人に間違いないか確認してから押してください(元に戻せません)。</p>
+        <div class="row" style="margin-top:14px"><button class="btn" id="sm_ok">紐付ける</button><button class="btn out" onclick="closeModal()">キャンセル</button></div>`);
+      $('#sm_ok').onclick = () => doLink(ms.length > 1 ? $('#sm_to').value : ms[0].userId, p.userId);
+    });
     document.querySelectorAll('[data-lk]').forEach(b => b.onclick = () => {
       const mu = users.find(u => u.userId === b.dataset.lk);
       const cands = users.filter(u => u.line && u.userId !== S.me.userId).sort((a, c) => (a.role === 'pending' ? 0 : 1) - (c.role === 'pending' ? 0 : 1));
@@ -925,12 +951,7 @@ async function viewAdmin() {
         <label>LINEで登録した人</label><select id="lk_to">${cands.map(u => `<option value="${esc(u.userId)}">${esc(u.name)}(${ROLE[u.role] || u.role}・${esc(u.createdAt)})</option>`).join('') || '<option value="">該当者なし</option>'}</select>
         <p class="muted">・打刻/日報/予定/前払いの記録は「${esc(mu.name)}」のものが本人に引き継がれます。<br>・氏名・権限・日当・社員コードは「${esc(mu.name)}」の設定が残ります。<br>・選んだLINE側の行は1つにまとめられて消えます。元に戻せないので、本人に間違いないか確認してください。</p>
         <div class="row" style="margin-top:14px"><button class="btn" id="lk_ok" ${cands.length ? '' : 'disabled'}>紐付ける</button><button class="btn out" onclick="closeModal()">キャンセル</button></div>`);
-      $('#lk_ok').onclick = () => run(async () => {
-        const to = $('#lk_to').value; if (!to) return;
-        const list = await api('linkUser', { manualId: mu.userId, lineId: to });
-        S.members = list.filter(u => ['admin', 'office', 'foreman', 'worker'].indexOf(u.role) >= 0).map(u => ({ userId: u.userId, name: u.name }));
-        closeModal(); toast('紐付けました'); viewAdmin();
-      });
+      $('#lk_ok').onclick = () => { const to = $('#lk_to').value; if (to) doLink(mu.userId, to); };
     });
   }
   document.querySelectorAll('[data-w]').forEach(inp => inp.onchange = () => run(async () => { await api('setUser', { userId: inp.dataset.w, dailyWage: inp.value }); toast('日当を保存しました'); }));
