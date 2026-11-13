@@ -199,6 +199,9 @@ var D = {
   hoursN: ['{n}時間', '{n} h', '{n} giờ', '{n} jam', '{n} oras'],
   content: ['作業内容', 'Work done', 'Nội dung công việc', 'Uraian pekerjaan', 'Ginawang trabaho'],
   contentPh: ['例:2F内装解体、産廃搬出2t車1台', 'e.g. 2F interior demolition, 1 truck of waste', 'Ví dụ: Tháo dỡ nội thất tầng 2, chở 1 xe rác', 'Contoh: Bongkar interior lt. 2, angkut 1 truk limbah', 'Hal.: Demolisyon sa 2F, 1 trak ng basura'],
+  bento: ['弁当', 'Lunch box (bento)', 'Cơm hộp (bento)', 'Nasi kotak (bento)', 'Baon (bento)'],
+  bentoYes: ['○ あり', '○ Yes', '○ Có', '○ Ya', '○ Oo'],
+  bentoNo: ['✕ なし', '✕ No', '✕ Không', '✕ Tidak', '✕ Hindi'],
   expense: ['経費', 'Expenses', 'Chi phí', 'Biaya', 'Gastos'],
   ex_なし: ['なし', 'None', 'Không có', 'Tidak ada', 'Wala'],
   ex_駐車場代: ['駐車場代', 'Parking', 'Phí đỗ xe', 'Parkir', 'Paradahan'],
@@ -547,6 +550,7 @@ async function viewReport() {
     <label>${t('inout')}</label><div class="row"><input type="time" id="r_s" value="${esc(att.clockIn || '08:00')}"><input type="time" id="r_e" value="${esc(att.clockOut || '17:00')}"></div>
     <div class="row"><div><label>${t('ot')}</label><select id="r_ot">${[0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8].map(v => `<option value="${v}">${v ? t('hoursN', { n: v }) : t('nobody')}</option>`).join('')}</select></div><div><label>${t('nightOt')}</label><select id="r_nt">${[0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8].map(v => `<option value="${v}">${v ? t('hoursN', { n: v }) : t('nobody')}</option>`).join('')}</select></div></div>
     <label>${t('content')} *</label><textarea id="r_c" placeholder="${t('contentPh')}"></textarea>
+    <label>${t('bento')}</label><div class="seg" id="r_bento" style="margin-bottom:0"><button type="button" data-bt="○">${t('bentoYes')}</button><button type="button" data-bt="✕" class="on">${t('bentoNo')}</button></div>
     <label>${t('expense')}</label><div class="row"><select id="r_xt"><option value="">${t('ex_なし')}</option>${['駐車場代', '高速代', 'ガソリン代', '材料費', 'その他'].map(x => `<option value="${x}">${t('ex_' + x)}</option>`).join('')}</select>
     <input type="number" id="r_xa" placeholder="${t('amountPh')}" inputmode="numeric"></div>
     ${S.me.can.proxy ? `<label>${t('workersLbl')}</label>
@@ -556,10 +560,11 @@ async function viewReport() {
       <p class="muted">${t('proxyNote')}</p>` : ''}
     <button class="btn big" id="r_save">${t('submit')}</button></div>
     <div class="card"><div class="calhead"><h2 style="margin:0">${S.me.can.viewAll ? t('repList') : t('myReps')}</h2><input type="month" id="r_m" value="${month}" style="width:auto"></div>
-    <div class="scroll"><table><tr><th>${t('th_date')}</th><th>${t('th_author')}</th><th>${t('th_type')}</th><th>${t('site')}</th><th>${t('th_time')}</th><th>${t('th_ot')}</th><th>${t('content')}</th><th class="n">${t('expense')}</th></tr>
-    ${list.map(r => `<tr><td>${esc(r.date)}</td><td>${esc(r.name)}${r.submittedBy ? `<br><span class="muted" style="font-size:11px">${esc(t('proxyBy', { n: r.submittedBy }))}</span>` : ''}</td><td><span class="pill ${r.workType === '加工' ? 'blue' : ''}">${esc(t('wt_' + (r.workType || '現場')))}</span></td><td>${esc(r.siteName)}</td><td>${esc(r.start)}-${esc(r.end)}</td><td>${r.otHours ? t('otNormal') + ' ' + esc(r.otHours) + 'h' : ''}${r.otHours && r.nightHours ? '<br>' : ''}${r.nightHours ? t('otNight') + ' ' + esc(r.nightHours) + 'h' : ''}</td><td style="white-space:normal;min-width:180px">${esc(r.content)}</td><td class="n">${r.expenseAmount ? esc(t('ex_' + r.expenseType)) + ' ' + yen(r.expenseAmount) : ''}</td></tr>`).join('') || `<tr><td colspan="8" class="muted">${t('none')}</td></tr>`}
+    <div class="scroll"><table><tr><th>${t('th_date')}</th><th>${t('th_author')}</th><th>${t('th_type')}</th><th>${t('site')}</th><th>${t('th_time')}</th><th>${t('th_ot')}</th><th>${t('bento')}</th><th>${t('content')}</th><th class="n">${t('expense')}</th></tr>
+    ${list.map(r => `<tr><td>${esc(r.date)}</td><td>${esc(r.name)}${r.submittedBy ? `<br><span class="muted" style="font-size:11px">${esc(t('proxyBy', { n: r.submittedBy }))}</span>` : ''}</td><td><span class="pill ${r.workType === '加工' ? 'blue' : ''}">${esc(t('wt_' + (r.workType || '現場')))}</span></td><td>${esc(r.siteName)}</td><td>${esc(r.start)}-${esc(r.end)}</td><td>${r.otHours ? t('otNormal') + ' ' + esc(r.otHours) + 'h' : ''}${r.otHours && r.nightHours ? '<br>' : ''}${r.nightHours ? t('otNight') + ' ' + esc(r.nightHours) + 'h' : ''}</td><td style="text-align:center">${esc(r.bento || '')}</td><td style="white-space:normal;min-width:180px">${esc(r.content)}</td><td class="n">${r.expenseAmount ? esc(t('ex_' + r.expenseType)) + ' ' + yen(r.expenseAmount) : ''}</td></tr>`).join('') || `<tr><td colspan="9" class="muted">${t('none')}</td></tr>`}
     </table></div></div>`;
   document.querySelectorAll('[data-wt]').forEach(b => b.onclick = () => document.querySelectorAll('[data-wt]').forEach(x => x.classList.toggle('on', x === b)));
+  document.querySelectorAll('[data-bt]').forEach(b => b.onclick = () => document.querySelectorAll('[data-bt]').forEach(x => x.classList.toggle('on', x === b)));
   $('#r_m').onchange = e => { S.repMonth = e.target.value; viewReport(); };
   // 代理提出:選んだ現場の「今日の予定」の担当者を自動でチェック
   const preset = () => {
@@ -575,7 +580,7 @@ async function viewReport() {
   $('#r_save').onclick = () => run(async () => {
     const workerIds = [...document.querySelectorAll('#r_workers input:checked')].map(c => c.value);
     const r = await api('submitReport', { date: $('#r_date').value, siteId: $('#r_site').value, start: $('#r_s').value, end: $('#r_e').value, content: $('#r_c').value, expenseType: $('#r_xt').value, expenseAmount: $('#r_xa').value,
-      workerIds, includeSelf: $('#r_self') ? $('#r_self').checked : true, workType: document.querySelector('[data-wt].on').dataset.wt, otHours: $('#r_ot').value, nightHours: $('#r_nt').value });
+      workerIds, includeSelf: $('#r_self') ? $('#r_self').checked : true, workType: document.querySelector('[data-wt].on').dataset.wt, otHours: $('#r_ot').value, nightHours: $('#r_nt').value, bento: document.querySelector('[data-bt].on').dataset.bt });
     toast(t('submitted', { n: r.count, t: t('wt_' + document.querySelector('[data-wt].on').dataset.wt) }) + (r.skipped.length ? t('skipped', { s: r.skipped.join(', ') }) : ''));
     viewReport();
   });
@@ -619,15 +624,15 @@ async function viewAgg() {
           <td><button class="btn sm" data-adv="${i}">確認する</button></td></tr>`).join('')}</table></div></div>` : ''}
       ${pr ? `<div class="card"><div class="calhead"><h2 style="margin:0">給料計算(${month})</h2><button class="btn out sm" id="paycsv">CSV</button></div>
         <div class="stats"><div class="stat">基本給 合計<b>${yen(pr.totals.base)}</b></div><div class="stat">残業代 合計<b>${yen(pr.totals.otPay + pr.totals.nightPay)}</b></div>
-          <div class="stat">総支給 合計<b>${yen(pr.totals.gross)}</b></div><div class="stat">前払い 合計<b>${yen(pr.totals.advance)}</b></div><div class="stat">差引支給額 合計<b>${yen(pr.totals.net)}</b></div></div>
-        <div class="scroll" style="margin-top:10px"><table><tr><th>氏名</th><th class="n">出勤日数</th><th class="n">日当</th><th class="n">基本給</th><th class="n">残業</th><th class="n">残業代</th><th class="n">深夜残業</th><th class="n">深夜残業代</th><th class="n">総支給</th><th class="n">前払い</th><th class="n">差引支給額</th></tr>
+          <div class="stat">総支給 合計<b>${yen(pr.totals.gross)}</b></div><div class="stat">前払い 合計<b>${yen(pr.totals.advance)}</b></div><div class="stat">弁当 合計<b>${pr.totals.bentoCount}食</b></div><div class="stat">差引支給額 合計<b>${yen(pr.totals.net)}</b></div></div>
+        <div class="scroll" style="margin-top:10px"><table><tr><th>氏名</th><th class="n">出勤日数</th><th class="n">日当</th><th class="n">基本給</th><th class="n">残業</th><th class="n">残業代</th><th class="n">深夜残業</th><th class="n">深夜残業代</th><th class="n">総支給</th><th class="n">前払い</th><th class="n">差引支給額</th><th class="n">弁当</th></tr>
         ${pr.rows.map((r, i) => `<tr class="click" data-pay="${i}"><td>${esc(r.name)}</td><td class="n">${r.days}日</td><td class="n ${r.noWage ? 'neg' : ''}">${r.noWage ? '未設定' : num(r.wage)}</td><td class="n">${num(r.base)}</td>
           <td class="n">${r.otHours}h</td><td class="n">${num(r.otPay)}</td><td class="n">${r.nightHours}h</td><td class="n">${num(r.nightPay)}</td><td class="n">${num(r.gross)}</td>
           <td class="n">${r.advance ? '−' + num(r.advance) + (r.advCount > 1 ? `<br><span class="muted" style="font-size:11px">${r.advCount}回</span>` : '') : '0'}</td>
-          <td class="n"><b class="${r.net < 0 ? 'neg' : ''}">${num(r.net)}</b></td></tr>`).join('') || '<tr><td colspan="11" class="muted">この月の勤務はありません</td></tr>'}</table></div>
+          <td class="n"><b class="${r.net < 0 ? 'neg' : ''}">${num(r.net)}</b></td><td class="n">${r.bentoCount}食</td></tr>`).join('') || '<tr><td colspan="12" class="muted">この月の勤務はありません</td></tr>'}</table></div>
         <p class="muted">基本給=出勤日数(打刻か日報がある日)×日当。残業・深夜残業=日報で選んだ時間の合計。
           残業単価=日当÷${pr.rule.std}×${pr.rule.rate}、深夜残業単価=日当÷${pr.rule.std}×${pr.rule.nightRate}。
-          日報の経費は給料に含めません。所得税・社会保険などの控除は含みません。行をタップすると日ごとの内訳が出ます。</p></div>` : ''}
+          弁当=日報で弁当「○」の日数(個数のみ。給料からは差し引きません)。日報の経費は給料に含めません。所得税・社会保険などの控除は含みません。行をタップすると日ごとの内訳が出ます。</p></div>` : ''}
       ${table('作業員別(勤務日数)', 'workers', ['氏名', '出勤日数', '労働時間(h)', '現場数', '未退勤'], a.workers.map(w => [w.name, w.days, w.hours, w.sites, w.open || '']))}
       ${table('現場(案件)別', 'sites', ['現場', '元請', '見積', '請求', '未請求額(円)', '延べ人工', '労働時間(h)', '人数', '経費(円)', '実行予算(円)'],
         a.sites.map(s => { const x = st[s.siteId] || {}; return [s.name, s.client, x.estStatus ? { html: pill(x.estStatus), text: x.estStatus } : '—', x.billStatus ? { html: pill(x.billStatus), text: x.billStatus } : '—', nz(x.unbilled, ''), s.manDays, s.hours, s.workers, s.expense, s.budget || '']; }))}
@@ -637,8 +642,8 @@ async function viewAgg() {
     document.querySelectorAll('[data-csv]').forEach(b => b.onclick = () => csv(b.dataset.csv));
     document.querySelectorAll('[data-adv]').forEach(b => b.onclick = () => advanceDecide(S.pendAdv[Number(b.dataset.adv)]));
     if ($('#paycsv')) $('#paycsv').onclick = () => {
-      TBL.pay = { title: '給料計算', head: ['氏名', '出勤日数', '日当', '基本給', '残業(h)', '残業単価', '残業代', '深夜残業(h)', '深夜残業単価', '深夜残業代', '総支給', '前払い', '差引支給額'],
-        rows: pr.rows.map(r => [r.name, r.days, r.wage, r.base, r.otHours, r.otUnit, r.otPay, r.nightHours, r.nightUnit, r.nightPay, r.gross, r.advance, r.net]) };
+      TBL.pay = { title: '給料計算', head: ['氏名', '出勤日数', '日当', '基本給', '残業(h)', '残業単価', '残業代', '深夜残業(h)', '深夜残業単価', '深夜残業代', '総支給', '前払い', '差引支給額', '弁当(食)'],
+        rows: pr.rows.map(r => [r.name, r.days, r.wage, r.base, r.otHours, r.otUnit, r.otPay, r.nightHours, r.nightUnit, r.nightPay, r.gross, r.advance, r.net, r.bentoCount]) };
       csv('pay');
     };
     document.querySelectorAll('[data-pay]').forEach(tr => tr.onclick = () => payDetail(pr.rows[Number(tr.dataset.pay)], month));
@@ -654,7 +659,9 @@ function payDetail(r, month) {
     <tr><td>深夜残業代(${r.nightHours}h × ${num(r.nightUnit)}円)</td><td class="n">${num(r.nightPay)}</td></tr>
     <tr><td><b>総支給</b></td><td class="n"><b>${num(r.gross)}</b></td></tr>
     <tr><td>前払い</td><td class="n">−${num(r.advance)}</td></tr>
-    <tr><td><b>差引支給額</b></td><td class="n"><b>${num(r.net)}</b></td></tr></table>
+
+    <tr><td><b>差引支給額</b></td><td class="n"><b>${num(r.net)}</b></td></tr>
+    <tr><td>弁当${r.bentoDates.length ? `<br><span class="muted" style="font-size:11px">${r.bentoDates.map(d => d.slice(5)).join(', ')}</span>` : ''}</td><td class="n">${r.bentoCount}食</td></tr></table>
     <p class="muted">単価は表示用に円未満を四捨五入しています。残業代は時間の合計 × 正確な単価で計算します。</p>
     <h3>残業のあった日(日報より)</h3><div class="scroll"><table><tr><th>日付</th><th>区分</th><th>現場</th><th>入退場</th><th class="n">通常残業(h)</th><th class="n">深夜残業(h)</th></tr>
     ${r.details.map(d => `<tr><td>${esc(d.date)}</td><td>${esc(d.workType)}</td><td>${esc(d.site)}</td><td>${esc(d.times)}</td><td class="n">${d.ot || ''}</td><td class="n">${d.night || ''}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">この月の残業はありません</td></tr>'}</table></div>
