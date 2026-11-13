@@ -80,6 +80,24 @@
   .items td{padding:3px 2px} .items input{padding:7px;font-size:14px}
   .modal .box.wide{max-width:860px}
   tr.click{cursor:pointer} tr.click:hover{background:var(--g2)}
+  /* 出勤簿 */
+  .rost{border-collapse:collapse;font-size:11px;min-width:100%}
+  .rost th,.rost td{border:1px solid #d5dcd8;padding:0;text-align:center;white-space:nowrap}
+  .rost th{background:#f4f7f5;color:var(--txt);font-weight:700;padding:3px 0;min-width:52px;font-size:12px}
+  .rost th.sat,.rost td.sat{background:#eef3fc} .rost th.sun,.rost td.sun{background:#fdeeee}
+  .rost th.sat{color:#2f6fd6} .rost th.sun{color:var(--red)} .rost th.tday{outline:2px solid var(--g);outline-offset:-2px}
+  .rost td{height:38px;width:52px;max-width:52px;vertical-align:middle;position:relative}
+  .rost .nm{position:sticky;left:0;background:#fff;z-index:1;min-width:84px;max-width:84px;padding:0 6px;text-align:left;font-weight:700;font-size:12.5px;overflow:hidden;text-overflow:ellipsis}
+  .rost .tot{font-weight:700;min-width:40px;background:#f4f7f5}
+  .rost .cw{height:38px;display:flex;flex-direction:column}
+  .rost .rc{flex:1;min-height:0;color:#fff;font-weight:700;font-size:10.5px;line-height:1.15;display:flex;align-items:center;justify-content:center;overflow:hidden;white-space:normal;word-break:break-all;padding:0 2px;text-shadow:0 0 2px rgba(0,0,0,.35)}
+  .rost .rc span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .rost .rc.half span{-webkit-line-clamp:1;font-size:9.5px}
+  .rost .rc.half+.rc.half{border-top:1px solid rgba(255,255,255,.7)}
+  .rost .rc small{font-size:9px;margin-left:1px;opacity:.95}
+  .rost .off{color:var(--red);font-size:11px}
+  .rost tr.sum td{font-weight:700;height:26px;background:#f4f7f5}
+  #print .rost{font-size:8.5px} #print .rost td{height:28px;width:auto;max-width:none} #print .rost .cw{height:28px} #print .rost th{min-width:0}
   /* 印刷用(見積書・請求書) */
   #print{display:none;position:fixed;inset:0;background:#fff;z-index:40;overflow:auto}
   #print .bar{position:sticky;top:0;background:#f0f0f0;padding:10px;display:flex;gap:8px;justify-content:center}
@@ -598,8 +616,13 @@ async function viewMine() {
 }
 
 // ---------- 集計(30秒ごと自動更新) ----------
+// 集計タブの切り替え(集計 / 出勤簿)
+const aggSeg = () => `<div class="seg">${[['summary', '集計'], ['roster', '出勤簿']].map(([k, l]) => `<button data-as="${k}" class="${(S.aggSub || 'summary') === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
+function bindAggSeg() { document.querySelectorAll('[data-as]').forEach(b => b.onclick = () => { S.aggSub = b.dataset.as; viewAgg(); }); }
+
 async function viewAgg() {
   const month = S.aggMonth || ym(new Date());
+  if (S.aggSub === 'roster') return viewRoster(month);
   const load = async () => {
     const a = await run(() => api('aggregate', { month })); if (!a || S.tab !== 'agg') return;
     // 案件ごとの見積・請求の状況(お金の権限がある人だけ)
@@ -610,7 +633,7 @@ async function viewAgg() {
     const pend = S.me.can.money ? await run(() => api('advances', { status: '申請中' })) || [] : [];
     S.pendAdv = pend;
     S.lastAgg = a;
-    $('#view').innerHTML = `<div class="card"><div class="calhead"><h2 style="margin:0">${month} の集計</h2><input type="month" id="am" value="${month}" style="width:auto"></div>
+    $('#view').innerHTML = aggSeg() + `<div class="card"><div class="calhead"><h2 style="margin:0">${month} の集計</h2><input type="month" id="am" value="${month}" style="width:auto"></div>
       <div class="stats">
         <div class="stat">いま現場にいる人<b>${a.totals.onSiteNow}人</b></div>
         <div class="stat">延べ人工<b>${a.totals.manDays}人工</b></div>
@@ -639,6 +662,7 @@ async function viewAgg() {
       ${table('元請別', 'clients', ['元請', '延べ人工', '労働時間(h)', '現場数', '経費(円)'], a.clients.map(c => [c.client, c.manDays, c.hours, c.sites, c.expense]))}
       ${table('日別の出勤人数', 'daily', ['日付', '人数'], a.daily.map(d => [d.date, d.people]))}`;
     $('#am').onchange = e => { S.aggMonth = e.target.value; viewAgg(); };
+    bindAggSeg();
     document.querySelectorAll('[data-csv]').forEach(b => b.onclick = () => csv(b.dataset.csv));
     document.querySelectorAll('[data-adv]').forEach(b => b.onclick = () => advanceDecide(S.pendAdv[Number(b.dataset.adv)]));
     if ($('#paycsv')) $('#paycsv').onclick = () => {
@@ -702,6 +726,82 @@ function advMemo(list) {
   return `前払金(${days})計${total % 10000 === 0 ? total / 10000 + '万円' : total.toLocaleString('ja-JP') + '円'}`;
 }
 
+// ---------- 出勤簿(作業員 × 日付) ----------
+async function viewRoster(month) {
+  const load = async () => {
+    const r = await run(() => api('roster', { month })); if (!r || S.tab !== 'agg' || S.aggSub !== 'roster') return;
+    S.rosterData = r; renderRoster(r);
+  };
+  $('#view').innerHTML = aggSeg() + '<div class="card">読み込み中…</div>'; bindAggSeg();
+  await load();
+  clearInterval(S.timer); S.timer = setInterval(load, 60000);
+}
+
+function rosterModel(r) {
+  const F = S.rosterF || (S.rosterF = { client: '', site: '', user: '', off: true });
+  const sm = r.sites, match = e => (!F.site || e.siteId === F.site) && (!F.client || (sm[e.siteId] || {}).client === F.client);
+  const E = r.entries.filter(match), cell = {};
+  E.forEach(e => { (cell[e.uid + '|' + e.date] = cell[e.uid + '|' + e.date] || []).push(e); });
+  let users = r.users.filter(u => !F.user || u.userId === F.user);
+  if (F.site || F.client) users = users.filter(u => E.some(e => e.uid === u.userId));
+  const [y, m] = r.month.split('-').map(Number);
+  const days = Array.from({ length: r.days }, (_, i) => { const d = new Date(y, m - 1, i + 1); return { ds: ymd(d), n: i + 1, w: d.getDay() }; });
+  return { F, E, cell, users, days, filtered: !!(F.site || F.client) };
+}
+
+function renderRoster(r) {
+  const { F, E, cell, users, days, filtered } = rosterModel(r);
+  const W = '日月火水木金土', sm = r.sites;
+  const clients = [...new Set(Object.values(sm).map(s => s.client).filter(Boolean))].sort();
+  const siteIds = Object.keys(sm).filter(id => !F.client || sm[id].client === F.client).sort((a, b) => (sm[a].name < sm[b].name ? -1 : 1));
+  const used = [...new Set(E.map(e => e.siteId))];
+  const dayCount = {}; E.forEach(e => { (dayCount[e.date] = dayCount[e.date] || {})[e.uid] = 1; });
+  const cellHtml = (u, d) => {
+    const list = cell[u.userId + '|' + d.ds];
+    if (list) return '<div class="cw">' + list.map(e => { const s = sm[e.siteId] || { name: '(削除)', color: '#999' };
+      return `<div class="rc${list.length > 1 ? ' half' : ''}" style="background:${esc(s.color)}" title="${esc(s.name)}${s.client ? '(' + esc(s.client) + ')' : ''}${e.kako ? ' 加工' : ''}"><span>${esc(s.name)}${e.kako ? '<small>加工</small>' : ''}</span></div>`; }).join('') + '</div>';
+    return F.off && !filtered && d.ds <= r.today ? '<span class="off">休み</span>' : '';
+  };
+  $('#view').innerHTML = aggSeg() + `<div class="card">
+    <div class="calhead"><h2 style="margin:0">出勤簿 ${r.month.replace('-', '年')}月</h2>
+      <span style="display:flex;gap:6px;flex-wrap:wrap"><input type="month" id="rm" value="${r.month}" style="width:auto"><button class="btn out sm" id="rcsv">CSV</button><button class="btn out sm" id="rprint">印刷</button></span></div>
+    <div class="row" style="flex-wrap:wrap">
+      <div><label>元請</label><select id="rf_client"><option value="">すべての元請</option>${clients.map(c => `<option ${c === F.client ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></div>
+      <div><label>案件</label><select id="rf_site"><option value="">すべての案件</option>${siteIds.map(id => `<option value="${esc(id)}" ${id === F.site ? 'selected' : ''}>${esc(sm[id].name)}</option>`).join('')}</select></div>
+      <div><label>作業員</label><select id="rf_user"><option value="">全員</option>${r.users.map(u => `<option value="${esc(u.userId)}" ${u.userId === F.user ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}</select></div>
+    </div>
+    <div class="chips" style="margin-top:8px"><label><input type="checkbox" id="rf_off" ${F.off ? 'checked' : ''}>出勤のない日に「休み」を表示</label></div>
+    <div class="chips" style="margin-top:10px">${used.map(id => `<span class="pill" style="background:${esc((sm[id] || {}).color || '#999')};color:#fff">${esc((sm[id] || {}).name || '')}</span>`).join('') || '<span class="muted">この条件の出勤はありません</span>'}</div>
+  </div>
+  <div class="card" style="padding:0"><div class="scroll rost-wrap" id="rost">${rosterTable(r, users, days, cellHtml, dayCount, cell, W)}</div></div>
+  <p class="muted">色は元請ごとの色です(「管理」タブの「元請と色」で変更)。「加工」は日報で作業区分を加工にした日。1日に2つの現場がある日は色を分けて表示します。60秒ごとに自動更新。</p>`;
+  bindAggSeg();
+  $('#rm').onchange = e => { S.aggMonth = e.target.value; viewAgg(); };
+  $('#rf_client').onchange = e => { F.client = e.target.value; F.site = ''; renderRoster(r); };
+  $('#rf_site').onchange = e => { F.site = e.target.value; renderRoster(r); };
+  $('#rf_user').onchange = e => { F.user = e.target.value; renderRoster(r); };
+  $('#rf_off').onchange = e => { F.off = e.target.checked; renderRoster(r); };
+  $('#rcsv').onclick = () => {
+    TBL.roster = { title: '出勤簿' + (F.client ? '_' + F.client : '') + (F.site ? '_' + sm[F.site].name : ''), head: ['氏名', ...days.map(d => `${d.n}(${W[d.w]})`), '出勤日数'],
+      rows: users.map(u => [u.name, ...days.map(d => { const l = cell[u.userId + '|' + d.ds]; return l ? l.map(e => (sm[e.siteId] || {}).name + (e.kako ? '加工' : '')).join('/') : (F.off && !filtered && d.ds <= r.today ? '休み' : ''); }),
+        days.filter(d => cell[u.userId + '|' + d.ds]).length]) };
+    csv('roster');
+  };
+  $('#rprint').onclick = () => {
+    $('#print').innerHTML = `<style>@page{size:A4 landscape;margin:8mm}</style><div class="bar"><button class="btn" onclick="window.print()">印刷 / PDF保存</button><button class="btn out" onclick="document.getElementById('print').style.display='none'">閉じる</button></div>
+      <div style="padding:6mm"><h2 style="margin:0 0 4mm">出勤簿 ${r.month.replace('-', '年')}月 ${F.client ? '/ ' + esc(F.client) : ''} ${F.site ? '/ ' + esc(sm[F.site].name) : ''}</h2>${rosterTable(r, users, days, cellHtml, dayCount, cell, W)}</div>`;
+    $('#print').style.display = 'block';
+  };
+}
+
+function rosterTable(r, users, days, cellHtml, dayCount, cell, W) {
+  const cls = d => (d.w === 0 ? 'sun' : d.w === 6 ? 'sat' : '') + (d.ds === r.today ? ' tday' : '');
+  return `<table class="rost"><thead><tr><th class="nm" rowspan="2">氏名</th>${days.map(d => `<th class="${cls(d)}">${d.n}</th>`).join('')}<th rowspan="2" class="tot">出勤<br>日数</th></tr>
+    <tr>${days.map(d => `<th class="${cls(d)}">${W[d.w]}</th>`).join('')}</tr></thead>
+    <tbody>${users.map(u => `<tr><td class="nm">${esc(u.name)}</td>${days.map(d => `<td class="${cls(d)}">${cellHtml(u, d)}</td>`).join('')}<td class="tot">${days.filter(d => cell[u.userId + '|' + d.ds]).length}</td></tr>`).join('') || `<tr><td class="nm">—</td><td colspan="${days.length + 1}" class="muted" style="text-align:left;padding:10px">該当する作業員はいません</td></tr>`}
+    <tr class="sum"><td class="nm">人数</td>${days.map(d => `<td class="${cls(d)}">${dayCount[d.ds] ? Object.keys(dayCount[d.ds]).length : ''}</td>`).join('')}<td class="tot"></td></tr></tbody></table>`;
+}
+
 // 前払いの承認・却下(管理者・事務)
 function advanceDecide(v) {
   modal(`<h2>前払い申請の確認</h2>
@@ -762,12 +862,18 @@ function csv(key) {
 // ---------- 管理(案件・ユーザー) ----------
 async function viewAdmin() {
   S.sites = await run(() => api('sites')) || S.sites;
+  S.clients = await run(() => api('clients')) || [];
   const users = S.me.can.users ? (await run(() => api('users')) || []) : null;
   const ROLE = { admin: '管理者', office: '事務', foreman: '職長', worker: '職人', pending: '承認待ち', disabled: '停止' };
   $('#view').innerHTML = `<div class="card"><div class="calhead"><h2 style="margin:0">案件一覧</h2><button class="btn sm" id="sadd">+ 案件を作成</button></div>
     <div class="scroll"><table><tr><th>色</th><th>案件名</th><th>元請</th><th>区分</th><th>住所</th><th>状態</th><th></th></tr>
     ${S.sites.map(s => `<tr><td><span class="sw" style="background:${esc(s.color)}"></span></td><td>${esc(s.name)}</td><td>${esc(s.client)}</td><td>${esc(s.contractType || '請負')}${s.contractType === '常用' && s.unitPrice ? '<br><span class="muted">' + num(s.unitPrice) + '円/人工</span>' : ''}</td><td>${esc(s.address)}</td><td>${esc(s.status)}</td><td><button class="btn out sm" data-s="${esc(s.siteId)}">編集</button></td></tr>`).join('') || '<tr><td colspan="7" class="muted">まだありません</td></tr>'}
     </table></div></div>
+    <div class="card"><div class="calhead"><h2 style="margin:0">元請と色</h2><button class="btn sm" id="cadd">+ 元請を追加</button></div>
+      <p class="muted">案件の色は元請ごとに統一されます。色を変えると、その元請の全案件(カレンダー・出勤簿・原価表)の色が変わります。新しい元請は自動で色が付きます。</p>
+      <div class="scroll"><table><tr><th>色</th><th>元請</th><th class="n">案件数</th></tr>
+      ${S.clients.map(c => `<tr><td><input type="color" data-cc="${esc(c.name)}" value="${esc(c.color || '#3b82f6')}" style="width:56px;height:36px;padding:2px"></td><td>${esc(c.name)}</td><td class="n">${c.sites}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">まだありません(案件で元請を入れると自動で追加されます)</td></tr>'}
+      </table></div></div>
     ${users ? `<div class="card"><h2>ユーザーと権限(管理者・事務)</h2>
       <p class="muted">新しく登録した人は「承認待ち」です。権限を選ぶと即反映されます。</p>
       <div class="scroll"><table><tr><th>氏名</th><th>権限</th><th>日当(円)</th><th>給料らくだ社員コード</th><th>登録日時</th></tr>
@@ -778,6 +884,13 @@ async function viewAdmin() {
       <h3>権限でできること</h3>
       <p class="muted">管理者:すべて / 事務:管理者の付け外し以外すべて(案件・予定の編集、集計、お金・原価、ユーザーの承認・日当) / 職長:全員の予定と日報を閲覧、打刻・日報 / 職人:自分の予定・打刻・日報のみ / 停止:利用不可</p></div>` : ''}`;
   $('#sadd').onclick = () => siteForm({});
+  document.querySelectorAll('[data-cc]').forEach(inp => inp.onchange = () => run(async () => { await api('saveClient', { name: inp.dataset.cc, color: inp.value }); toast('色を変更しました'); viewAdmin(); }));
+  $('#cadd').onclick = () => {
+    modal(`<h2>元請を追加</h2><label>元請名 *</label><input id="c_name" placeholder="例:△△建設株式会社">
+      <label>色(空けると自動)</label><input type="color" id="c_color" value="#3b82f6" style="height:44px"><div class="chips" style="margin-top:6px"><label><input type="checkbox" id="c_auto" checked>色を自動で決める</label></div>
+      <div class="row" style="margin-top:14px"><button class="btn" id="c_save">追加</button><button class="btn out" onclick="closeModal()">キャンセル</button></div>`);
+    $('#c_save').onclick = () => run(async () => { await api('saveClient', { name: $('#c_name').value, color: $('#c_auto').checked ? '' : $('#c_color').value }); closeModal(); toast('追加しました'); viewAdmin(); });
+  };
   document.querySelectorAll('[data-s]').forEach(b => b.onclick = () => siteForm(S.sites.find(s => s.siteId === b.dataset.s)));
   document.querySelectorAll('[data-u]').forEach(sel => sel.onchange = () => run(async () => { await api('setUser', { userId: sel.dataset.u, role: sel.value }); toast('権限を変更しました'); }));
   document.querySelectorAll('[data-w]').forEach(inp => inp.onchange = () => run(async () => { await api('setUser', { userId: inp.dataset.w, dailyWage: inp.value }); toast('日当を保存しました'); }));
@@ -786,20 +899,29 @@ async function viewAdmin() {
 function siteForm(s) {
   modal(`<h2>${s.siteId ? '案件を編集' : '案件を作成'}</h2>
     <label>案件名(現場名) *</label><input id="s_name" value="${esc(s.name || '')}" placeholder="例:●●ビル施工工事">
-    <label>元請</label><input id="s_client" value="${esc(s.client || '')}" placeholder="例:△△建設株式会社">
+    <label>元請(選ぶと色が自動で決まります)</label>
+    <div class="row"><select id="s_client_sel" style="flex:3"><option value="">(なし)</option>${(S.clients || []).map(c => `<option value="${esc(c.name)}" data-color="${esc(c.color)}" ${c.name === s.client ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}<option value="__new">+ 新しい元請を入力</option></select>
+      <span id="s_sw" class="sw" style="flex:0 0 40px;height:44px;border-radius:8px;margin:0"></span></div>
+    <input id="s_client_new" placeholder="新しい元請名(例:△△建設株式会社)" style="display:none;margin-top:6px">
     <label>住所</label><input id="s_addr" value="${esc(s.address || '')}">
-    <div class="row"><div><label>色ラベル</label><input type="color" id="s_color" value="${esc(s.color || '#3b82f6')}" style="height:44px"></div>
-    <div><label>状態</label><select id="s_status">${['見積中', '進行中', '完了'].map(v => `<option ${v === (s.status || '進行中') ? 'selected' : ''}>${v}</option>`).join('')}</select></div></div>
+    <label>状態</label><select id="s_status">${['見積中', '進行中', '完了'].map(v => `<option ${v === (s.status || '進行中') ? 'selected' : ''}>${v}</option>`).join('')}</select>
     <label>契約区分</label><select id="s_type">${['請負', '常用'].map(v => `<option ${v === (s.contractType || '請負') ? 'selected' : ''}>${v}</option>`).join('')}</select>
     <div id="s_ukeoi"><label>請負契約金額(円・税抜)</label><input type="number" id="s_amount" value="${esc(s.contractAmount || '')}" placeholder="空欄なら「受注」見積の合計を売上にします"></div>
     <div id="s_jouyou"><label>常用単価(円/1人工・税抜)</label><input type="number" id="s_unit" value="${esc(s.unitPrice || '')}" placeholder="例:25000"></div>
     <label>実行予算(円)</label><input type="number" id="s_budget" value="${esc(s.budget || '')}">
     <label>備考</label><textarea id="s_memo">${esc(s.memo || '')}</textarea>
     <div class="row" style="margin-top:14px"><button class="btn" id="s_save">保存</button><button class="btn out" onclick="closeModal()">キャンセル</button></div>`);
+  const csel = () => {
+    const o = $('#s_client_sel').selectedOptions[0], isNew = $('#s_client_sel').value === '__new';
+    $('#s_client_new').style.display = isNew ? '' : 'none';
+    $('#s_sw').style.background = isNew ? 'repeating-linear-gradient(45deg,#ddd 0 6px,#fff 6px 12px)' : (o && o.dataset.color) || '#cfd8d3';
+    $('#s_sw').title = isNew ? '保存すると自動で色が付きます' : '';
+  };
+  $('#s_client_sel').onchange = csel; csel();
   const toggle = () => { const j = $('#s_type').value === '常用'; $('#s_jouyou').style.display = j ? '' : 'none'; $('#s_ukeoi').style.display = j ? 'none' : ''; };
   $('#s_type').onchange = toggle; toggle();
   $('#s_save').onclick = () => run(async () => {
-    await api('saveSite', { siteId: s.siteId, name: $('#s_name').value, client: $('#s_client').value, address: $('#s_addr').value, color: $('#s_color').value, status: $('#s_status').value, budget: $('#s_budget').value, memo: $('#s_memo').value,
+    await api('saveSite', { siteId: s.siteId, name: $('#s_name').value, client: $('#s_client_sel').value === '__new' ? $('#s_client_new').value : $('#s_client_sel').value, address: $('#s_addr').value, status: $('#s_status').value, budget: $('#s_budget').value, memo: $('#s_memo').value,
       contractType: $('#s_type').value, unitPrice: $('#s_unit').value, contractAmount: $('#s_amount').value });
     closeModal(); toast('保存しました'); viewAdmin();
   });
