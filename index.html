@@ -622,7 +622,7 @@ async function viewAgg() {
         <div class="scroll"><table><tr><th>申請日</th><th>氏名</th><th class="n">金額</th><th>理由</th><th></th></tr>
         ${pend.map((v, i) => `<tr><td>${esc(v.date)}</td><td>${esc(v.name)}</td><td class="n">${num(v.amount)}円</td><td style="white-space:normal">${esc(v.reason)}</td>
           <td><button class="btn sm" data-adv="${i}">確認する</button></td></tr>`).join('')}</table></div></div>` : ''}
-      ${pr ? `<div class="card"><div class="calhead"><h2 style="margin:0">給料計算(${month})</h2><button class="btn out sm" id="paycsv">CSV</button></div>
+      ${pr ? `<div class="card"><div class="calhead"><h2 style="margin:0">給料計算(${month})</h2><span style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm" id="rakuda">給料らくだ用CSV(KINTAI6.CSV)</button><button class="btn out sm" id="paycsv">CSV</button></span></div>
         <div class="stats"><div class="stat">基本給 合計<b>${yen(pr.totals.base)}</b></div><div class="stat">残業代 合計<b>${yen(pr.totals.otPay + pr.totals.nightPay)}</b></div>
           <div class="stat">総支給 合計<b>${yen(pr.totals.gross)}</b></div><div class="stat">前払い 合計<b>${yen(pr.totals.advance)}</b></div><div class="stat">弁当 合計<b>${pr.totals.bentoCount}食</b></div><div class="stat">差引支給額 合計<b>${yen(pr.totals.net)}</b></div></div>
         <div class="scroll" style="margin-top:10px"><table><tr><th>氏名</th><th class="n">出勤日数</th><th class="n">日当</th><th class="n">基本給</th><th class="n">残業</th><th class="n">残業代</th><th class="n">深夜残業</th><th class="n">深夜残業代</th><th class="n">総支給</th><th class="n">前払い</th><th class="n">差引支給額</th><th class="n">弁当</th></tr>
@@ -647,6 +647,23 @@ async function viewAgg() {
       csv('pay');
     };
     document.querySelectorAll('[data-pay]').forEach(tr => tr.onclick = () => payDetail(pr.rows[Number(tr.dataset.pay)], month));
+    if ($('#rakuda')) $('#rakuda').onclick = () => run(async () => {
+      const r = await api('rakudaCsv', { month });
+      const bin = atob(r.base64), u8 = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([u8], { type: 'text/csv' })); a.download = r.filename; a.click();
+      modal(`<h2>KINTAI6.CSV を作成しました(${r.count}人分)</h2>
+        ${r.missing.length ? `<p class="neg">給料らくだ社員コードが未設定のため、次の人は入っていません:${esc(r.missing.join('、'))}<br>「管理」タブのユーザー一覧で社員コードを入れてから、もう一度作成してください。</p>` : ''}
+        <h3>給料らくだへの取り込み方</h3>
+        <ol style="line-height:1.8;padding-left:20px">
+          <li>ダウンロードした <b>KINTAI6.CSV</b> を、ファイル名を変えずに <b>パブリックのドキュメント</b>(C:\Users\Public\Documents)に置く(上書き)</li>
+          <li>(初回のみ)給料らくだの[設定]→[勤怠データ取込]で「勤怠集計データ」の取り込みを使用にチェックし、列定義は「給料らくだ6-9/20-26形式」</li>
+          <li>${esc(month.replace('-', '年'))}月の明細書を開き、[勤怠]ボタン→社員を選んで[次へ]→[書き込み]→[更新]</li>
+          <li>前払金は、給料計算の行をタップして出る「給料らくだ転記用」を見て控除欄に入力</li>
+        </ol>
+        <div class="row"><button class="btn out" onclick="closeModal()">閉じる</button></div>`);
+    });
   };
   await load();
   clearInterval(S.timer); S.timer = setInterval(load, 30000);
@@ -663,9 +680,26 @@ function payDetail(r, month) {
     <tr><td><b>差引支給額</b></td><td class="n"><b>${num(r.net)}</b></td></tr>
     <tr><td>弁当${r.bentoDates.length ? `<br><span class="muted" style="font-size:11px">${r.bentoDates.map(d => d.slice(5)).join(', ')}</span>` : ''}</td><td class="n">${r.bentoCount}食</td></tr></table>
     <p class="muted">単価は表示用に円未満を四捨五入しています。残業代は時間の合計 × 正確な単価で計算します。</p>
+    <h3>給料らくだ転記用</h3>
+    <div class="card" style="background:var(--g2);margin-bottom:8px">
+      <div>社員コード:<b>${esc(r.empCode || '未設定')}</b> / 勤務日数 <b>${r.days}</b> / 残業 <b>${r.otHours}</b> / 深夜残業 <b>${r.nightHours}</b></div>
+      <div style="margin-top:6px">控除「前払金」:<b style="font-size:18px">${num(r.advance)}</b> 円 <button class="btn out sm" data-copy="${r.advance}">金額をコピー</button></div>
+      ${r.advList.length ? `<div style="margin-top:6px">メモ欄:<code id="advMemo">${esc(advMemo(r.advList))}</code> <button class="btn out sm" data-copy="${esc(advMemo(r.advList))}">メモをコピー</button></div>` : ''}
+      <div style="margin-top:6px">弁当:<b>${r.bentoCount}</b> 食</div>
+    </div>
     <h3>残業のあった日(日報より)</h3><div class="scroll"><table><tr><th>日付</th><th>区分</th><th>現場</th><th>入退場</th><th class="n">通常残業(h)</th><th class="n">深夜残業(h)</th></tr>
     ${r.details.map(d => `<tr><td>${esc(d.date)}</td><td>${esc(d.workType)}</td><td>${esc(d.site)}</td><td>${esc(d.times)}</td><td class="n">${d.ot || ''}</td><td class="n">${d.night || ''}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">この月の残業はありません</td></tr>'}</table></div>
     <div class="row" style="margin-top:12px"><button class="btn out" onclick="closeModal()">閉じる</button></div>`, true);
+  document.querySelectorAll('[data-copy]').forEach(b => b.onclick = () => {
+    const v = b.dataset.copy;
+    (navigator.clipboard ? navigator.clipboard.writeText(v) : Promise.reject()).then(() => toast('コピーしました'), () => { prompt('コピーしてください', v); });
+  });
+}
+// 給料らくだのメモ欄用:「前払金(9/26・10/7・10/16)計16万円」
+function advMemo(list) {
+  const total = list.reduce((s, a) => s + a.amount, 0);
+  const days = list.map(a => Number(a.date.slice(5, 7)) + '/' + Number(a.date.slice(8, 10))).join('・');
+  return `前払金(${days})計${total % 10000 === 0 ? total / 10000 + '万円' : total.toLocaleString('ja-JP') + '円'}`;
 }
 
 // 前払いの承認・却下(管理者・事務)
@@ -736,17 +770,18 @@ async function viewAdmin() {
     </table></div></div>
     ${users ? `<div class="card"><h2>ユーザーと権限(管理者・事務)</h2>
       <p class="muted">新しく登録した人は「承認待ち」です。権限を選ぶと即反映されます。</p>
-      <div class="scroll"><table><tr><th>氏名</th><th>権限</th><th>日当(円)</th><th>登録日時</th></tr>
+      <div class="scroll"><table><tr><th>氏名</th><th>権限</th><th>日当(円)</th><th>給料らくだ社員コード</th><th>登録日時</th></tr>
       ${users.map(u => `<tr><td>${esc(u.name)}${u.userId === S.me.userId ? '(自分)' : ''}</td><td><select data-u="${esc(u.userId)}" style="width:auto" ${!S.me.can.admin && u.role === 'admin' ? 'disabled' : ''}>${Object.keys(ROLE).filter(k => S.me.can.admin || k !== 'admin' || u.role === 'admin').map(k => `<option value="${k}" ${k === u.role ? 'selected' : ''}>${ROLE[k]}</option>`).join('')}</select></td>
-        <td><input type="number" data-w="${esc(u.userId)}" value="${esc(u.dailyWage || '')}" placeholder="例:18000" style="width:110px"></td><td>${esc(u.createdAt)}</td></tr>`).join('')}
+        <td><input type="number" data-w="${esc(u.userId)}" value="${esc(u.dailyWage || '')}" placeholder="例:18000" style="width:110px"></td><td><input data-ec="${esc(u.userId)}" value="${esc(u.empCode || '')}" placeholder="例:8" style="width:90px"></td><td>${esc(u.createdAt)}</td></tr>`).join('')}
       </table></div>
-      <p class="muted">日当は原価管理の「労務費」(打刻か日報がある日 × 日当)に使います。職人本人には表示されません。</p>
+      <p class="muted">日当は原価管理の「労務費」(打刻か日報がある日 × 日当)に使います。職人本人には表示されません。給料らくだ社員コードは、給料らくだの「社員No.」と同じ番号を入れます(KINTAI6.CSVで使います)。</p>
       <h3>権限でできること</h3>
       <p class="muted">管理者:すべて / 事務:管理者の付け外し以外すべて(案件・予定の編集、集計、お金・原価、ユーザーの承認・日当) / 職長:全員の予定と日報を閲覧、打刻・日報 / 職人:自分の予定・打刻・日報のみ / 停止:利用不可</p></div>` : ''}`;
   $('#sadd').onclick = () => siteForm({});
   document.querySelectorAll('[data-s]').forEach(b => b.onclick = () => siteForm(S.sites.find(s => s.siteId === b.dataset.s)));
   document.querySelectorAll('[data-u]').forEach(sel => sel.onchange = () => run(async () => { await api('setUser', { userId: sel.dataset.u, role: sel.value }); toast('権限を変更しました'); }));
   document.querySelectorAll('[data-w]').forEach(inp => inp.onchange = () => run(async () => { await api('setUser', { userId: inp.dataset.w, dailyWage: inp.value }); toast('日当を保存しました'); }));
+  document.querySelectorAll('[data-ec]').forEach(inp => inp.onchange = () => run(async () => { await api('setUser', { userId: inp.dataset.ec, empCode: inp.value }); toast('社員コードを保存しました'); }));
 }
 function siteForm(s) {
   modal(`<h2>${s.siteId ? '案件を編集' : '案件を作成'}</h2>
