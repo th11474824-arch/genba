@@ -112,6 +112,7 @@
   .paper .sum td{font-weight:700}
   .paper .from{text-align:right;font-size:10pt}
   @media print{
+    html,body{background:#fff!important}
     body>*:not(#print){display:none!important}
     #print{display:block!important;position:static}
     #print .bar{display:none}
@@ -1021,7 +1022,7 @@ async function costDetail(r, C) {
 async function docList(type) {
   const isE = type === 'estimates', L = isE ? '見積' : '請求';
   const list = await run(() => api('docs', { type })) || [];
-  $('#mview').innerHTML = `<div class="card"><div class="calhead"><h2 style="margin:0">${L}書</h2><button class="btn sm" id="dnew">+ ${L}書を作成</button></div>
+  $('#mview').innerHTML = `<div class="card"><div class="calhead"><h2 style="margin:0">${L}書</h2><span style="display:flex;gap:6px">${isE ? '' : '<button class="btn out sm" id="sealBtn">角印を登録</button>'}<button class="btn sm" id="dnew">+ ${L}書を作成</button></span></div>
     <div class="scroll"><table><tr><th>番号</th><th>${isE ? '発行日' : '請求日'}</th><th>案件</th><th>件名</th><th class="n">合計(税込)</th><th>状態</th><th></th></tr>
     ${list.map((d, i) => `<tr><td>${esc(d.no)}</td><td>${esc(d.issueDate)}</td><td>${esc(d.siteName)}</td><td>${esc(d.title)}</td><td class="n">${num(d.total)}</td>
       <td><span class="pill ${['失注', '未送付', '作成中'].includes(d.status) ? 'tmp' : ''}">${esc(d.status)}</span>${d.paidDate ? '<br><span class="muted">入金 ' + esc(d.paidDate) + '</span>' : ''}</td>
@@ -1030,6 +1031,7 @@ async function docList(type) {
     </table></div>
     <p class="muted">${isE ? '状態を「受注」にすると、その金額が原価管理表の売上になります。「請求書へ」で同じ明細の請求書を作れます。' : '状態を「入金済」にすると入金日が記録され、原価管理表の入金済に入ります。'}</p></div>`;
   $('#dnew').onclick = () => docForm(type, {});
+  if ($('#sealBtn')) $('#sealBtn').onclick = async () => { if (S.seal == null) S.seal = (await run(() => api('seal')) || {}).data || ''; sealForm(); };
   document.querySelectorAll('[data-ed]').forEach(b => b.onclick = () => docForm(type, list[b.dataset.ed]));
   document.querySelectorAll('[data-pr]').forEach(b => b.onclick = () => printDoc(type, list[b.dataset.pr]));
   document.querySelectorAll('[data-inv]').forEach(b => b.onclick = () => {
@@ -1087,6 +1089,7 @@ function docForm(type, d) {
 
 // 印刷(ブラウザの印刷 → 「PDFに保存」でPDFにもできる)
 function printDoc(type, d) {
+  if (type === 'invoices') return printInvoice(d);
   const isE = type === 'estimates', c = S.settings || {}, R = 'style="text-align:right"';
   const rows = d.items.map(i => `<tr><td>${esc(i.name)}</td><td ${R}>${esc(i.qty)}</td><td style="text-align:center">${esc(i.unit)}</td><td ${R}>${num(i.price)}</td><td ${R}>${num(i.amount)}</td></tr>`).join('');
   const blank = '<tr><td>&nbsp;</td><td></td><td></td><td></td><td></td></tr>'.repeat(Math.max(0, 10 - d.items.length));
@@ -1103,6 +1106,90 @@ function printDoc(type, d) {
     <p>${isE ? `有効期限:${esc(d.validUntil || '')}` : `お支払期限:${esc(d.dueDate || '')}<br>お振込先:${esc(c['振込先'])}`}</p>
     ${d.note ? `<p>備考:<br>${esc(d.note).replace(/\n/g, '<br>')}</p>` : ''}</div>`;
   $('#print').style.display = 'block';
+}
+
+// 請求書(会社の書式:タイトル・御中・ご請求金額・工事名称の明細・小計/消費税/合計金額・振込先)
+async function printInvoice(d) {
+  const c = S.settings || {};
+  if (S.seal == null) S.seal = (await run(() => api('seal')) || {}).data || '';
+  const R = 'class="r"', jd = s => { const p = String(s || '').split('-'); return p.length === 3 ? `${p[0]}年${Number(p[1])}月${Number(p[2])}日` : ''; };
+  const items = [{ name: d.title, head: true }].concat(d.items);
+  const ITEM_ROWS = Math.max(11, items.length), AFTER_ROWS = 7;
+  const row = i => `<tr><td class="nm${i.head ? ' hd' : ''}">${esc(i.name || '')}</td><td ${R}>${i.head ? '' : esc(i.qty)}</td><td class="c">${i.head ? '' : esc(i.unit)}</td><td ${R}>${i.head ? '' : num(i.price)}</td><td ${R}>${i.head ? '' : num(i.amount)}</td></tr>`;
+  const blank = n => '<tr><td class="nm">&nbsp;</td><td></td><td></td><td></td><td></td></tr>'.repeat(Math.max(0, n));
+  const br = s => esc(s || '').replace(/\n/g, '<br>');
+  $('#print').innerHTML = `<style>
+    .inv{width:186mm;margin:8mm auto;color:#000;font-family:"Noto Sans JP","Noto Sans CJK JP",sans-serif;font-size:10.5pt}
+    .inv .ttl{text-align:center;font-size:20pt;font-weight:500;letter-spacing:.9em;padding:0 0 2mm .9em;border-bottom:1.6px solid #000;margin:0}
+    .inv .dt{text-align:right;margin:5mm 0 9mm;font-size:11pt}
+    .inv .top{display:flex;justify-content:space-between;align-items:flex-start}
+    .inv .lft{width:104mm}
+    .inv .to{border-bottom:1px solid #000;padding:0 2mm 1mm;font-size:13pt;display:flex;justify-content:space-between;min-height:8mm;align-items:flex-end}
+    .inv .to span:last-child{margin-left:4mm}
+    .inv .msg{text-align:right;font-size:8.5pt;margin:1mm 0 0}
+    .inv .amt{margin-top:18mm;border-bottom:1px solid #000;display:flex;align-items:flex-end;padding:0 2mm 1mm;font-size:14pt}
+    .inv .amt b{margin-left:auto;font-size:17pt;font-weight:500} .inv .amt small{font-size:9pt;margin-left:2mm}
+    .inv .co{width:66mm;position:relative;font-size:9.5pt;line-height:1.55;padding-top:1mm}
+    .inv .co .cn{font-size:12.5pt;margin-bottom:.5mm}
+    .inv .co img{position:absolute;right:0;top:-1mm;width:17mm;height:17mm;object-fit:contain}
+    .inv table{width:100%;border-collapse:collapse;margin-top:5mm;border:1.6px solid #000}
+    .inv th,.inv td{border:1px solid #000;height:6.1mm;padding:0 1.5mm;font-size:9.5pt}
+    .inv th{font-weight:400;font-size:9pt;border-bottom:1.6px solid #000;text-align:center;color:#000;background:#fff;white-space:nowrap}
+    .inv td.r{text-align:right} .inv td.c{text-align:center} .inv td.hd{font-weight:700}
+    .inv tr.sub td{border-top:1.6px solid #000} .inv tr.sub td.lb,.inv tr.tax td.lb{text-align:center;padding-left:40mm}
+    .inv tr.tot td{border-top:1.6px solid #000;font-size:10.5pt}
+    .inv .bank{border:1px solid #000;margin-top:5mm;padding:3mm 5mm;font-size:10pt;line-height:1.7;display:flex;justify-content:space-between}
+    .inv .bank .acc{text-align:right}
+    .inv .note{margin-top:3mm;font-size:9pt}
+    @page{size:A4;margin:8mm}
+  </style>
+  <div class="bar"><button class="btn" onclick="window.print()">印刷 / PDF保存</button><button class="btn out" onclick="document.getElementById('print').style.display='none'">閉じる</button></div>
+  <div class="inv">
+    <h1 class="ttl">請求書</h1>
+    <div class="dt">${jd(d.issueDate)}<br><span style="font-size:8.5pt">No. ${esc(d.no)}</span></div>
+    <div class="top">
+      <div class="lft">
+        <div class="to"><span>${esc(d.client || d.siteName)}</span><span>御中</span></div>
+        <div class="msg">下記の通りご請求申し上げます。</div>
+        <div class="amt"><span>ご請求金額</span><b>¥${num(d.total)}</b><small>(税込)</small></div>
+      </div>
+      <div class="co">${S.seal ? `<img src="${S.seal}" alt="">` : ''}
+        <div class="cn">${esc(c['会社名'])}</div>${c['郵便番号'] ? `<div>${esc(c['郵便番号'])}</div>` : ''}<div>${esc(c['住所'])}</div>
+        <div>登録番号:${esc(c['登録番号(インボイス)'])}</div><div>TEL:${esc(c['電話番号'])}</div>${c['FAX'] ? `<div>FAX:${esc(c['FAX'])}</div>` : ''}</div>
+    </div>
+    <table>
+      <tr><th style="width:57%">工事名称</th><th style="width:7%">数量</th><th style="width:7%">単位</th><th style="width:14.5%">単 価</th><th style="width:14.5%">金 額</th></tr>
+      ${items.map(row).join('')}${blank(ITEM_ROWS - items.length)}
+      <tr class="sub"><td class="lb">小　計</td><td></td><td></td><td></td><td ${R}>${num(d.subtotal)}</td></tr>
+      <tr class="tax"><td class="lb">消費税</td><td class="c">${esc(d.taxRate)}</td><td class="c">%</td><td></td><td ${R}>${num(d.tax)}</td></tr>
+      ${blank(AFTER_ROWS)}
+      <tr class="tot"><td></td><td colspan="2" class="c">合計金額</td><td colspan="2" ${R}>¥${num(d.total)}</td></tr>
+    </table>
+    <div class="bank"><div>【お振込先】${d.dueDate ? `<br><span style="font-size:9pt">お支払期限:${jd(d.dueDate)}</span>` : ''}</div>
+      <div class="acc">${br(c['振込先'])}<br>${br(c['振込先の口座名義'])}</div></div>
+    ${d.note ? `<div class="note">備考:${br(d.note)}</div>` : ''}
+  </div>`;
+  $('#print').style.display = 'block';
+}
+
+// 角印の登録(請求書の会社名の横に印刷)
+function sealForm() {
+  modal(`<h2>角印の画像を登録</h2>
+    <p class="muted">請求書の会社名の右側に印刷されます。背景が透明か白の画像(PNG・JPEG)を選んでください。画像はスプレッドシートに保存され、外部には公開されません。</p>
+    ${S.seal ? `<p>現在の角印:<br><img src="${S.seal}" style="width:90px;height:90px;object-fit:contain;border:1px solid #ddd;border-radius:8px"></p>` : '<p class="muted">まだ登録されていません。</p>'}
+    <input type="file" id="sealFile" accept="image/png,image/jpeg">
+    <div class="row" style="margin-top:14px"><button class="btn" id="sealSave">登録する</button>${S.seal ? '<button class="btn red" id="sealDel">削除</button>' : ''}<button class="btn out" onclick="closeModal()">閉じる</button></div>`);
+  $('#sealSave').onclick = () => run(async () => {
+    const f = $('#sealFile').files[0]; if (!f) throw new Error('画像を選んでください');
+    const img = await new Promise((ok, ng) => { const i = new Image(); i.onload = () => ok(i); i.onerror = ng; i.src = URL.createObjectURL(f); });
+    const cv = document.createElement('canvas'), sz = 240, k = Math.min(sz / img.width, sz / img.height, 1);
+    cv.width = Math.round(img.width * k); cv.height = Math.round(img.height * k);
+    cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+    let data = cv.toDataURL('image/png');
+    if (data.length > 300000) { const c2 = document.createElement('canvas'); c2.width = cv.width; c2.height = cv.height; const x = c2.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c2.width, c2.height); x.drawImage(cv, 0, 0); data = c2.toDataURL('image/jpeg', 0.9); }
+    await api('saveSeal', { data }); S.seal = data; closeModal(); toast('角印を登録しました');
+  });
+  if ($('#sealDel')) $('#sealDel').onclick = () => { if (confirm('角印を削除しますか?')) run(async () => { await api('saveSeal', { data: '' }); S.seal = ''; closeModal(); toast('削除しました'); }); };
 }
 
 // 原価入力(材料費・外注費など)
