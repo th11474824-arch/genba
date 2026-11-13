@@ -663,11 +663,11 @@ async function viewAgg() {
         <div class="stats"><div class="stat">基本給 合計<b>${yen(prT.base)}</b></div><div class="stat">残業代 合計<b>${yen(prT.otPay + prT.nightPay)}</b></div>
           <div class="stat">総支給 合計<b>${yen(prT.gross)}</b></div><div class="stat">前払い 合計<b>${yen(prT.advance)}</b></div><div class="stat">弁当 合計<b>${prT.bentoCount}食</b></div><div class="stat">差引支給額 合計<b>${yen(prT.net)}</b></div></div>
         <div class="scroll" style="margin-top:10px"><table><tr><th>氏名</th><th>所属会社</th><th class="n">出勤日数</th><th class="n">日当</th><th class="n">基本給</th><th class="n">残業</th><th class="n">残業代</th><th class="n">深夜残業</th><th class="n">深夜残業代</th><th class="n">総支給</th><th class="n">前払い</th><th class="n">差引支給額</th><th class="n">弁当</th></tr>
-        ${prRows.map(r => `<tr class="click" data-pay="${pr.rows.indexOf(r)}"><td>${esc(r.name)}</td><td>${esc(r.company || '—')}</td><td class="n">${r.days}日</td><td class="n ${r.noWage ? 'neg' : ''}">${r.noWage ? '未設定' : num(r.wage)}</td><td class="n">${num(r.base)}</td>
+        ${prRows.map(r => `<tr class="click" data-pay="${pr.rows.indexOf(r)}"><td>${esc(r.name)}</td><td>${esc(r.company || '—')}</td><td class="n">${r.days}日</td><td class="n ${r.noWage ? 'neg' : ''}">${r.noWage ? '未設定' : num(r.wage) + (r.wageSrc === 'company' ? '<br><span class="muted" style="font-size:11px">会社単価</span>' : '')}</td><td class="n">${num(r.base)}</td>
           <td class="n">${r.otHours}h</td><td class="n">${num(r.otPay)}</td><td class="n">${r.nightHours}h</td><td class="n">${num(r.nightPay)}</td><td class="n">${num(r.gross)}</td>
           <td class="n">${r.advance ? '−' + num(r.advance) + (r.advCount > 1 ? `<br><span class="muted" style="font-size:11px">${r.advCount}回</span>` : '') : '0'}</td>
           <td class="n"><b class="${r.net < 0 ? 'neg' : ''}">${num(r.net)}</b></td><td class="n">${r.bentoCount}食</td></tr>`).join('') || '<tr><td colspan="13" class="muted">この月の勤務はありません</td></tr>'}</table></div>
-        <p class="muted">基本給=出勤日数(打刻か日報がある日)×日当。残業・深夜残業=日報で選んだ時間の合計。
+        <p class="muted">基本給=出勤日数(打刻か日報がある日)×日当(所属会社に単価があれば会社単価)。残業・深夜残業=日報で選んだ時間の合計。
           残業単価=日当÷${pr.rule.std}×${pr.rule.rate}、深夜残業単価=日当÷${pr.rule.std}×${pr.rule.nightRate}。
           弁当=日報で弁当「○」の日数(個数のみ。給料からは差し引きません)。日報の経費は給料に含めません。所得税・社会保険などの控除は含みません。行をタップすると日ごとの内訳が出ます。</p></div>` : ''}
       ${table('所属会社別', 'companies', ['所属会社', '人数', '延べ人工', '労働時間(h)', '現場数', '現場ごとの人工'].concat(pr ? ['総支給(円)', '差引支給額(円)'] : []),
@@ -712,7 +712,7 @@ async function viewAgg() {
 // 給料の日ごとの内訳
 function payDetail(r, month) {
   modal(`<h2>${esc(r.name)} さんの給料内訳(${esc(month)})</h2>
-    <table><tr><td>基本給(${r.days}日 × ${num(r.wage)}円)</td><td class="n">${num(r.base)}</td></tr>
+    <table><tr><td>基本給(${r.days}日 × ${num(r.wage)}円${r.wageSrc === 'company' ? '・' + esc(r.company) + 'の会社単価' : ''})</td><td class="n">${num(r.base)}</td></tr>
     <tr><td>残業代(${r.otHours}h × ${num(r.otUnit)}円)</td><td class="n">${num(r.otPay)}</td></tr>
     <tr><td>深夜残業代(${r.nightHours}h × ${num(r.nightUnit)}円)</td><td class="n">${num(r.nightPay)}</td></tr>
     <tr><td><b>総支給</b></td><td class="n"><b>${num(r.gross)}</b></td></tr>
@@ -898,6 +898,7 @@ async function viewAdmin() {
   // 所属会社ごとに並べる(フィルタ付き)
   const UF = S.userCo || '';
   const coOrder = comps.map(c => c.name);
+  const coPrice = {}; comps.forEach(c => { if (Number(c.unitPrice) > 0) coPrice[c.name] = Number(c.unitPrice); });
   const coRank = c => (c ? (coOrder.indexOf(c) >= 0 ? coOrder.indexOf(c) : 900) : 999);
   const shown = (users || []).filter(u => !UF || (UF === '__none' ? !u.company : u.company === UF))
     .slice().sort((a, b) => coRank(a.company) - coRank(b.company) || (a.role === 'disabled') - (b.role === 'disabled'));
@@ -921,14 +922,16 @@ async function viewAdmin() {
       ${shown.map(u => `${groupRow(u)}<tr><td><input data-n="${esc(u.userId)}" value="${esc(u.name)}" style="width:130px">${u.userId === S.me.userId ? '<span class="muted">(自分)</span>' : ''}</td>
         <td>${coSel(u.company, `data-co="${esc(u.userId)}"`)}</td>
         <td>${sameName[u.userId] ? `<span style="color:#b45309;font-weight:700;white-space:nowrap">同名の手動登録あり</span><br><button class="btn sm" style="background:#d97706" data-same="${esc(u.userId)}">紐付ける</button>` : u.line ? '<span class="muted">連携済</span>' : `<span style="color:#b45309">未連携</span><br><button class="btn out sm" data-lk="${esc(u.userId)}">LINEと紐付け</button>`}</td><td><select data-u="${esc(u.userId)}" style="width:auto" ${!S.me.can.admin && u.role === 'admin' ? 'disabled' : ''}>${Object.keys(ROLE).filter(k => S.me.can.admin || k !== 'admin' || u.role === 'admin').map(k => `<option value="${k}" ${k === u.role ? 'selected' : ''}>${ROLE[k]}</option>`).join('')}</select></td>
-        <td><input type="number" data-w="${esc(u.userId)}" value="${esc(u.dailyWage || '')}" placeholder="例:18000" style="width:110px"></td><td><input data-ec="${esc(u.userId)}" value="${esc(u.empCode || '')}" placeholder="例:8" style="width:90px"></td><td>${esc(u.createdAt)}</td></tr>`).join('')}
+        <td><input type="number" data-w="${esc(u.userId)}" value="${esc(u.dailyWage || '')}" placeholder="例:18000" style="width:110px${coPrice[u.company] ? ';color:#9aa5a0;text-decoration:line-through' : ''}">${coPrice[u.company] ? `<br><span style="font-size:11px;color:var(--g);font-weight:700">会社単価 ${num(coPrice[u.company])}円 を適用</span>` : ''}</td><td><input data-ec="${esc(u.userId)}" value="${esc(u.empCode || '')}" placeholder="例:8" style="width:90px"></td><td>${esc(u.createdAt)}</td></tr>`).join('')}
       </table></div>
       ${shown.length ? '' : '<p class="muted">この会社の人はいません</p>'}
       <h3>所属会社の一覧</h3>
-      <div class="scroll"><table><tr><th>所属会社</th><th class="n">人数</th><th></th></tr>
-      ${comps.map(c => `<tr><td>${esc(c.name)}${c.memo ? ` <span class="muted">${esc(c.memo)}</span>` : ''}</td><td class="n">${c.users}人</td><td><button class="btn out sm" data-coed="${esc(c.name)}">名前を変更</button> <button class="btn out sm" data-codel="${esc(c.name)}">削除</button></td></tr>`).join('') || '<tr><td colspan="3" class="muted">まだありません</td></tr>'}
+      <div class="scroll"><table><tr><th>所属会社</th><th class="n">人数</th><th>単価(円/人工)</th><th></th></tr>
+      ${comps.map(c => `<tr><td>${esc(c.name)}${c.memo ? ` <span class="muted">${esc(c.memo)}</span>` : ''}</td><td class="n">${c.users}人</td>
+        <td><input type="number" data-cop="${esc(c.name)}" value="${esc(c.unitPrice || '')}" placeholder="空欄=個人日当" style="width:150px"></td><td><button class="btn out sm" data-coed="${esc(c.name)}">名前を変更</button> <button class="btn out sm" data-codel="${esc(c.name)}">削除</button></td></tr>`).join('') || '<tr><td colspan="4" class="muted">まだありません</td></tr>'}
       </table></div>
       <div style="margin-top:8px"><button class="btn out sm" id="coadd">+ 所属会社を追加</button></div>
+      <p class="muted"><b>単価</b>を入れた会社の人は、個人の日当ではなく会社の単価で給料計算(基本給・残業単価)と原価の労務費を計算します。空欄の会社の人は、今までどおり個人の日当を使います。</p>
       <p class="muted">所属会社は作業員ごとの「所属会社」のプルダウンで選びます。集計タブ・出勤簿で所属会社ごとに絞り込み・集計できます。</p>
       <p class="muted">日当は原価管理の「労務費」(打刻か日報がある日 × 日当)に使います。職人本人には表示されません。給料らくだ社員コードは、給料らくだの「社員No.」と同じ番号を入れます(KINTAI6.CSVで使います)。</p>
       <h3>権限でできること</h3>
@@ -975,6 +978,10 @@ async function viewAdmin() {
       if (v === '__new') { v = await askCompany('新しい所属会社を追加'); if (!v) { viewAdmin(); return; } }
       await run(async () => { await api('setUser', { userId: sel.dataset.co, company: v }); toast('所属会社を変更しました'); viewAdmin(); });
     });
+    document.querySelectorAll('[data-cop]').forEach(inp => inp.onchange = () => run(async () => {
+      await api('saveCompany', { oldName: inp.dataset.cop, name: inp.dataset.cop, unitPrice: inp.value });
+      toast(inp.value ? '単価を保存しました' : '単価を消しました(個人の日当を使います)'); viewAdmin();
+    }));
     $('#coadd').onclick = async () => { const v = await askCompany('所属会社を追加'); if (v) run(async () => { await api('saveCompany', { name: v }); toast('追加しました'); viewAdmin(); }); };
     document.querySelectorAll('[data-coed]').forEach(b => b.onclick = async () => {
       const v = await askCompany('所属会社の名前を変更', b.dataset.coed);
