@@ -119,6 +119,7 @@
     .paper{margin:0 auto}
     @page{size:A4;margin:12mm}
   }
+  tr.cogrp td{background:var(--g2);font-weight:700;color:var(--g);padding:6px 10px}
   .samebox{display:flex;gap:12px;align-items:center;justify-content:space-between;background:#fff7e6;border:2px solid #f59e0b;border-radius:10px;padding:12px;margin:0 0 10px}
   .samebox .btn{flex:0 0 auto;background:#d97706}
 </style>
@@ -636,6 +637,15 @@ async function viewAgg() {
     const pend = S.me.can.money ? await run(() => api('advances', { status: '申請中' })) || [] : [];
     S.pendAdv = pend;
     S.lastAgg = a;
+    // 所属会社での絞り込み(給料計算・作業員別)
+    const CO = S.aggCo || '';
+    const coOk = c => !CO || (CO === '__none' ? !c || c === '(未設定)' : c === CO);
+    const coList = [...new Set(a.companies.map(k => k.company).filter(c => c !== '(未設定)'))];
+    const prRows = pr ? pr.rows.filter(r => coOk(r.company)) : [];
+    const pt = k => prRows.reduce((t, r) => t + r[k], 0);
+    const prT = pr ? { base: pt('base'), otPay: pt('otPay'), nightPay: pt('nightPay'), gross: pt('gross'), advance: pt('advance'), bentoCount: pt('bentoCount'), net: pt('net') } : null;
+    const coLabel = CO ? (CO === '__none' ? '所属会社 未設定' : CO) : '';
+    const coPay = {}; (pr ? pr.rows : []).forEach(r => { const k = r.company || '(未設定)'; const x = coPay[k] || (coPay[k] = { gross: 0, net: 0 }); x.gross += r.gross; x.net += r.net; });
     $('#view').innerHTML = aggSeg() + `<div class="card"><div class="calhead"><h2 style="margin:0">${month} の集計</h2><input type="month" id="am" value="${month}" style="width:auto"></div>
       <div class="stats">
         <div class="stat">いま現場にいる人<b>${a.totals.onSiteNow}人</b></div>
@@ -643,44 +653,48 @@ async function viewAgg() {
         <div class="stat">総労働時間<b>${a.totals.hours}h</b></div>
         <div class="stat">稼働人数<b>${a.totals.workers}人</b></div>
         <div class="stat">経費合計<b>${yen(a.totals.expense)}</b></div>
-      </div><p class="muted">最終更新 ${esc(a.updatedAt)}(30秒ごとに自動更新)</p></div>
+      </div><p class="muted">最終更新 ${esc(a.updatedAt)}(30秒ごとに自動更新)</p>
+      <div style="max-width:300px"><label>所属会社で絞り込み(給料計算・作業員別)</label><select id="aco"><option value="">すべての会社</option>${coList.map(c => `<option ${c === CO ? 'selected' : ''}>${esc(c)}</option>`).join('')}<option value="__none" ${CO === '__none' ? 'selected' : ''}>(未設定)</option></select></div></div>
       ${pend.length ? `<div class="card" style="border:2px solid #f0b429"><h2>前払い申請 承認待ち(${pend.length}件)</h2>
         <div class="scroll"><table><tr><th>申請日</th><th>氏名</th><th class="n">金額</th><th>理由</th><th></th></tr>
         ${pend.map((v, i) => `<tr><td>${esc(v.date)}</td><td>${esc(v.name)}</td><td class="n">${num(v.amount)}円</td><td style="white-space:normal">${esc(v.reason)}</td>
           <td><button class="btn sm" data-adv="${i}">確認する</button></td></tr>`).join('')}</table></div></div>` : ''}
-      ${pr ? `<div class="card"><div class="calhead"><h2 style="margin:0">給料計算(${month})</h2><span style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm" id="rakuda">給料らくだ用CSV(KINTAI6.CSV)</button><button class="btn out sm" id="paycsv">CSV</button></span></div>
-        <div class="stats"><div class="stat">基本給 合計<b>${yen(pr.totals.base)}</b></div><div class="stat">残業代 合計<b>${yen(pr.totals.otPay + pr.totals.nightPay)}</b></div>
-          <div class="stat">総支給 合計<b>${yen(pr.totals.gross)}</b></div><div class="stat">前払い 合計<b>${yen(pr.totals.advance)}</b></div><div class="stat">弁当 合計<b>${pr.totals.bentoCount}食</b></div><div class="stat">差引支給額 合計<b>${yen(pr.totals.net)}</b></div></div>
-        <div class="scroll" style="margin-top:10px"><table><tr><th>氏名</th><th class="n">出勤日数</th><th class="n">日当</th><th class="n">基本給</th><th class="n">残業</th><th class="n">残業代</th><th class="n">深夜残業</th><th class="n">深夜残業代</th><th class="n">総支給</th><th class="n">前払い</th><th class="n">差引支給額</th><th class="n">弁当</th></tr>
-        ${pr.rows.map((r, i) => `<tr class="click" data-pay="${i}"><td>${esc(r.name)}</td><td class="n">${r.days}日</td><td class="n ${r.noWage ? 'neg' : ''}">${r.noWage ? '未設定' : num(r.wage)}</td><td class="n">${num(r.base)}</td>
+      ${pr ? `<div class="card"><div class="calhead"><h2 style="margin:0">給料計算(${month})${coLabel ? ' / ' + esc(coLabel) : ''}</h2><span style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm" id="rakuda">給料らくだ用CSV(KINTAI6.CSV)</button><button class="btn out sm" id="paycsv">CSV</button></span></div>
+        <div class="stats"><div class="stat">基本給 合計<b>${yen(prT.base)}</b></div><div class="stat">残業代 合計<b>${yen(prT.otPay + prT.nightPay)}</b></div>
+          <div class="stat">総支給 合計<b>${yen(prT.gross)}</b></div><div class="stat">前払い 合計<b>${yen(prT.advance)}</b></div><div class="stat">弁当 合計<b>${prT.bentoCount}食</b></div><div class="stat">差引支給額 合計<b>${yen(prT.net)}</b></div></div>
+        <div class="scroll" style="margin-top:10px"><table><tr><th>氏名</th><th>所属会社</th><th class="n">出勤日数</th><th class="n">日当</th><th class="n">基本給</th><th class="n">残業</th><th class="n">残業代</th><th class="n">深夜残業</th><th class="n">深夜残業代</th><th class="n">総支給</th><th class="n">前払い</th><th class="n">差引支給額</th><th class="n">弁当</th></tr>
+        ${prRows.map(r => `<tr class="click" data-pay="${pr.rows.indexOf(r)}"><td>${esc(r.name)}</td><td>${esc(r.company || '—')}</td><td class="n">${r.days}日</td><td class="n ${r.noWage ? 'neg' : ''}">${r.noWage ? '未設定' : num(r.wage)}</td><td class="n">${num(r.base)}</td>
           <td class="n">${r.otHours}h</td><td class="n">${num(r.otPay)}</td><td class="n">${r.nightHours}h</td><td class="n">${num(r.nightPay)}</td><td class="n">${num(r.gross)}</td>
           <td class="n">${r.advance ? '−' + num(r.advance) + (r.advCount > 1 ? `<br><span class="muted" style="font-size:11px">${r.advCount}回</span>` : '') : '0'}</td>
-          <td class="n"><b class="${r.net < 0 ? 'neg' : ''}">${num(r.net)}</b></td><td class="n">${r.bentoCount}食</td></tr>`).join('') || '<tr><td colspan="12" class="muted">この月の勤務はありません</td></tr>'}</table></div>
+          <td class="n"><b class="${r.net < 0 ? 'neg' : ''}">${num(r.net)}</b></td><td class="n">${r.bentoCount}食</td></tr>`).join('') || '<tr><td colspan="13" class="muted">この月の勤務はありません</td></tr>'}</table></div>
         <p class="muted">基本給=出勤日数(打刻か日報がある日)×日当。残業・深夜残業=日報で選んだ時間の合計。
           残業単価=日当÷${pr.rule.std}×${pr.rule.rate}、深夜残業単価=日当÷${pr.rule.std}×${pr.rule.nightRate}。
           弁当=日報で弁当「○」の日数(個数のみ。給料からは差し引きません)。日報の経費は給料に含めません。所得税・社会保険などの控除は含みません。行をタップすると日ごとの内訳が出ます。</p></div>` : ''}
-      ${table('作業員別(勤務日数)', 'workers', ['氏名', '出勤日数', '労働時間(h)', '現場数', '未退勤'], a.workers.map(w => [w.name, w.days, w.hours, w.sites, w.open || '']))}
+      ${table('所属会社別', 'companies', ['所属会社', '人数', '延べ人工', '労働時間(h)', '現場数', '現場ごとの人工'].concat(pr ? ['総支給(円)', '差引支給額(円)'] : []),
+        a.companies.map(k => [k.company, k.people, k.manDays, k.hours, k.sites, k.bySite.map(b => b.site + ' ' + b.manDays).join(' / ')].concat(pr ? [(coPay[k.company] || {}).gross || 0, (coPay[k.company] || {}).net || 0] : [])))}
+      ${table('作業員別(勤務日数)' + (coLabel ? ' / ' + esc(coLabel) : ''), 'workers', ['氏名', '所属会社', '出勤日数', '労働時間(h)', '現場数', '未退勤'], a.workers.filter(w => coOk(w.company)).map(w => [w.name, w.company, w.days, w.hours, w.sites, w.open || '']))}
       ${table('現場(案件)別', 'sites', ['現場', '元請', '見積', '請求', '未請求額(円)', '延べ人工', '労働時間(h)', '人数', '経費(円)', '実行予算(円)'],
         a.sites.map(s => { const x = st[s.siteId] || {}; return [s.name, s.client, x.estStatus ? { html: pill(x.estStatus), text: x.estStatus } : '—', x.billStatus ? { html: pill(x.billStatus), text: x.billStatus } : '—', nz(x.unbilled, ''), s.manDays, s.hours, s.workers, s.expense, s.budget || '']; }))}
       ${table('元請別', 'clients', ['元請', '延べ人工', '労働時間(h)', '現場数', '経費(円)'], a.clients.map(c => [c.client, c.manDays, c.hours, c.sites, c.expense]))}
       ${table('日別の出勤人数', 'daily', ['日付', '人数'], a.daily.map(d => [d.date, d.people]))}`;
     $('#am').onchange = e => { S.aggMonth = e.target.value; viewAgg(); };
+    $('#aco').onchange = e => { S.aggCo = e.target.value; viewAgg(); };
     bindAggSeg();
     document.querySelectorAll('[data-csv]').forEach(b => b.onclick = () => csv(b.dataset.csv));
     document.querySelectorAll('[data-adv]').forEach(b => b.onclick = () => advanceDecide(S.pendAdv[Number(b.dataset.adv)]));
     if ($('#paycsv')) $('#paycsv').onclick = () => {
-      TBL.pay = { title: '給料計算', head: ['氏名', '出勤日数', '日当', '基本給', '残業(h)', '残業単価', '残業代', '深夜残業(h)', '深夜残業単価', '深夜残業代', '総支給', '前払い', '差引支給額', '弁当(食)'],
-        rows: pr.rows.map(r => [r.name, r.days, r.wage, r.base, r.otHours, r.otUnit, r.otPay, r.nightHours, r.nightUnit, r.nightPay, r.gross, r.advance, r.net, r.bentoCount]) };
+      TBL.pay = { title: '給料計算' + (coLabel ? '_' + coLabel : ''), head: ['氏名', '所属会社', '出勤日数', '日当', '基本給', '残業(h)', '残業単価', '残業代', '深夜残業(h)', '深夜残業単価', '深夜残業代', '総支給', '前払い', '差引支給額', '弁当(食)'],
+        rows: prRows.map(r => [r.name, r.company, r.days, r.wage, r.base, r.otHours, r.otUnit, r.otPay, r.nightHours, r.nightUnit, r.nightPay, r.gross, r.advance, r.net, r.bentoCount]) };
       csv('pay');
     };
     document.querySelectorAll('[data-pay]').forEach(tr => tr.onclick = () => payDetail(pr.rows[Number(tr.dataset.pay)], month));
     if ($('#rakuda')) $('#rakuda').onclick = () => run(async () => {
-      const r = await api('rakudaCsv', { month });
+      const r = await api('rakudaCsv', { month, company: CO });
       const bin = atob(r.base64), u8 = new Uint8Array(bin.length);
       for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
       const a = document.createElement('a');
       a.href = URL.createObjectURL(new Blob([u8], { type: 'text/csv' })); a.download = r.filename; a.click();
-      modal(`<h2>KINTAI6.CSV を作成しました(${r.count}人分)</h2>
+      modal(`<h2>KINTAI6.CSV を作成しました(${coLabel ? esc(coLabel) + ' ' : ''}${r.count}人分)</h2>
         ${r.missing.length ? `<p class="neg">給料らくだ社員コードが未設定のため、次の人は入っていません:${esc(r.missing.join('、'))}<br>「管理」タブのユーザー一覧で社員コードを入れてから、もう一度作成してください。</p>` : ''}
         <h3>給料らくだへの取り込み方</h3>
         <ol style="line-height:1.8;padding-left:20px">
@@ -741,11 +755,13 @@ async function viewRoster(month) {
 }
 
 function rosterModel(r) {
-  const F = S.rosterF || (S.rosterF = { client: '', site: '', user: '', off: true });
-  const sm = r.sites, match = e => (!F.site || e.siteId === F.site) && (!F.client || (sm[e.siteId] || {}).client === F.client);
+  const F = S.rosterF || (S.rosterF = { client: '', site: '', user: '', off: true, co: '' });
+  const coU = {}; r.users.forEach(u => { coU[u.userId] = u.company || ''; });
+  const coOk = uid => !F.co || (F.co === '__none' ? !coU[uid] : coU[uid] === F.co);
+  const sm = r.sites, match = e => coOk(e.uid) && (!F.site || e.siteId === F.site) && (!F.client || (sm[e.siteId] || {}).client === F.client);
   const E = r.entries.filter(match), cell = {};
   E.forEach(e => { (cell[e.uid + '|' + e.date] = cell[e.uid + '|' + e.date] || []).push(e); });
-  let users = r.users.filter(u => !F.user || u.userId === F.user);
+  let users = r.users.filter(u => (!F.user || u.userId === F.user) && coOk(u.userId));
   if (F.site || F.client) users = users.filter(u => E.some(e => e.uid === u.userId));
   const [y, m] = r.month.split('-').map(Number);
   const days = Array.from({ length: r.days }, (_, i) => { const d = new Date(y, m - 1, i + 1); return { ds: ymd(d), n: i + 1, w: d.getDay() }; });
@@ -771,7 +787,8 @@ function renderRoster(r) {
     <div class="row" style="flex-wrap:wrap">
       <div><label>元請</label><select id="rf_client"><option value="">すべての元請</option>${clients.map(c => `<option ${c === F.client ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></div>
       <div><label>案件</label><select id="rf_site"><option value="">すべての案件</option>${siteIds.map(id => `<option value="${esc(id)}" ${id === F.site ? 'selected' : ''}>${esc(sm[id].name)}</option>`).join('')}</select></div>
-      <div><label>作業員</label><select id="rf_user"><option value="">全員</option>${r.users.map(u => `<option value="${esc(u.userId)}" ${u.userId === F.user ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}</select></div>
+      <div><label>所属会社</label><select id="rf_co"><option value="">すべての会社</option>${[...new Set(r.users.map(u => u.company).filter(Boolean))].sort().map(c => `<option ${c === F.co ? 'selected' : ''}>${esc(c)}</option>`).join('')}<option value="__none" ${F.co === '__none' ? 'selected' : ''}>(未設定)</option></select></div>
+      <div><label>作業員</label><select id="rf_user"><option value="">全員</option>${r.users.filter(u => coOk(u.userId)).map(u => `<option value="${esc(u.userId)}" ${u.userId === F.user ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}</select></div>
     </div>
     <div class="chips" style="margin-top:8px"><label><input type="checkbox" id="rf_off" ${F.off ? 'checked' : ''}>出勤のない日に「休み」を表示</label></div>
     <div class="chips" style="margin-top:10px">${used.map(id => `<span class="pill" style="background:${esc((sm[id] || {}).color || '#999')};color:#fff">${esc((sm[id] || {}).name || '')}</span>`).join('') || '<span class="muted">この条件の出勤はありません</span>'}</div>
@@ -783,16 +800,17 @@ function renderRoster(r) {
   $('#rf_client').onchange = e => { F.client = e.target.value; F.site = ''; renderRoster(r); };
   $('#rf_site').onchange = e => { F.site = e.target.value; renderRoster(r); };
   $('#rf_user').onchange = e => { F.user = e.target.value; renderRoster(r); };
+  $('#rf_co').onchange = e => { F.co = e.target.value; F.user = ''; renderRoster(r); };
   $('#rf_off').onchange = e => { F.off = e.target.checked; renderRoster(r); };
   $('#rcsv').onclick = () => {
-    TBL.roster = { title: '出勤簿' + (F.client ? '_' + F.client : '') + (F.site ? '_' + sm[F.site].name : ''), head: ['氏名', ...days.map(d => `${d.n}(${W[d.w]})`), '出勤日数'],
+    TBL.roster = { title: '出勤簿' + (F.co ? '_' + (F.co === '__none' ? '所属未設定' : F.co) : '') + (F.client ? '_' + F.client : '') + (F.site ? '_' + sm[F.site].name : ''), head: ['氏名', ...days.map(d => `${d.n}(${W[d.w]})`), '出勤日数'],
       rows: users.map(u => [u.name, ...days.map(d => { const l = cell[u.userId + '|' + d.ds]; return l ? l.map(e => (sm[e.siteId] || {}).name + (e.kako ? '加工' : '')).join('/') : (F.off && !filtered && d.ds <= r.today ? '休み' : ''); }),
         days.filter(d => cell[u.userId + '|' + d.ds]).length]) };
     csv('roster');
   };
   $('#rprint').onclick = () => {
     $('#print').innerHTML = `<style>@page{size:A4 landscape;margin:8mm}</style><div class="bar"><button class="btn" onclick="window.print()">印刷 / PDF保存</button><button class="btn out" onclick="document.getElementById('print').style.display='none'">閉じる</button></div>
-      <div style="padding:6mm"><h2 style="margin:0 0 4mm">出勤簿 ${r.month.replace('-', '年')}月 ${F.client ? '/ ' + esc(F.client) : ''} ${F.site ? '/ ' + esc(sm[F.site].name) : ''}</h2>${rosterTable(r, users, days, cellHtml, dayCount, cell, W)}</div>`;
+      <div style="padding:6mm"><h2 style="margin:0 0 4mm">出勤簿 ${r.month.replace('-', '年')}月 ${F.co ? '/ ' + esc(F.co === '__none' ? '所属会社 未設定' : F.co) : ''} ${F.client ? '/ ' + esc(F.client) : ''} ${F.site ? '/ ' + esc(sm[F.site].name) : ''}</h2>${rosterTable(r, users, days, cellHtml, dayCount, cell, W)}</div>`;
     $('#print').style.display = 'block';
   };
 }
@@ -867,6 +885,7 @@ async function viewAdmin() {
   S.sites = await run(() => api('sites')) || S.sites;
   S.clients = await run(() => api('clients')) || [];
   const users = S.me.can.users ? (await run(() => api('users')) || []) : null;
+  const comps = users ? (await run(() => api('companies')) || []) : [];
   const ROLE = { admin: '管理者', office: '事務', foreman: '職長', worker: '職人', pending: '承認待ち', disabled: '停止' };
   // 承認待ち(LINE登録)と同じ名前の「未連携(手動追加)」の人を探す(空白の有無は無視)
   const nk = n => String(n || '').replace(/[\s\u3000]/g, '');
@@ -876,6 +895,15 @@ async function viewAdmin() {
     if (m.length) sameName[p.userId] = m;
   });
   const matchIds = Object.keys(sameName);
+  // 所属会社ごとに並べる(フィルタ付き)
+  const UF = S.userCo || '';
+  const coOrder = comps.map(c => c.name);
+  const coRank = c => (c ? (coOrder.indexOf(c) >= 0 ? coOrder.indexOf(c) : 900) : 999);
+  const shown = (users || []).filter(u => !UF || (UF === '__none' ? !u.company : u.company === UF))
+    .slice().sort((a, b) => coRank(a.company) - coRank(b.company) || (a.role === 'disabled') - (b.role === 'disabled'));
+  const coSel = (val, attr) => `<select ${attr} style="width:auto;min-width:120px"><option value="">(未設定)</option>${comps.map(c => `<option ${c.name === val ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}${val && coOrder.indexOf(val) < 0 ? `<option selected>${esc(val)}</option>` : ''}<option value="__new">+ 新しい会社を追加…</option></select>`;
+  let lastCo = null;
+  const groupRow = u => { const c = u.company || ''; if (c === lastCo) return ''; lastCo = c; const n = shown.filter(x => (x.company || '') === c).length; return `<tr class="cogrp"><td colspan="7">${esc(c || '所属会社 未設定')}<span class="muted">(${n}人)</span></td></tr>`; };
   $('#view').innerHTML = `<div class="card"><div class="calhead"><h2 style="margin:0">案件一覧</h2><button class="btn sm" id="sadd">+ 案件を作成</button></div>
     <div class="scroll"><table><tr><th>色</th><th>案件名</th><th>元請</th><th>区分</th><th>住所</th><th>状態</th><th></th></tr>
     ${S.sites.map(s => `<tr><td><span class="sw" style="background:${esc(s.color)}"></span></td><td>${esc(s.name)}</td><td>${esc(s.client)}</td><td>${esc(s.contractType || '請負')}${s.contractType === '常用' && s.unitPrice ? '<br><span class="muted">' + num(s.unitPrice) + '円/人工</span>' : ''}</td><td>${esc(s.address)}</td><td>${esc(s.status)}</td><td><button class="btn out sm" data-s="${esc(s.siteId)}">編集</button></td></tr>`).join('') || '<tr><td colspan="7" class="muted">まだありません</td></tr>'}
@@ -888,11 +916,20 @@ async function viewAdmin() {
     ${users ? `<div class="card"><div class="calhead"><h2 style="margin:0">ユーザーと権限(管理者・事務)</h2><button class="btn sm" id="uadd">+ 作業員を追加</button></div>
       ${matchIds.map(pid => { const p = users.find(u => u.userId === pid); return `<div class="samebox"><div><b>${esc(p.name)}</b> さんがLINEから申請しています。同じ名前の手動登録があります。<br><span class="muted">本人なら、紐付けると1人にまとまり、手動登録の権限(${esc(ROLE[sameName[pid][0].role])})で承認されます。記録も引き継がれます。</span></div><button class="btn sm" data-same="${esc(pid)}">紐付ける</button></div>`; }).join('')}
       <p class="muted">LINEから登録した人は「承認待ち」です。権限を選ぶと即反映されます。LINEを使わない人は「+ 作業員を追加」で名前だけ登録できます(予定の担当・代理の日報・給料計算・出勤簿に出ます)。</p>
-      <div class="scroll"><table><tr><th>氏名</th><th>LINE</th><th>権限</th><th>日当(円)</th><th>給料らくだ社員コード</th><th>登録日時</th></tr>
-      ${users.map(u => `<tr><td><input data-n="${esc(u.userId)}" value="${esc(u.name)}" style="width:130px">${u.userId === S.me.userId ? '<span class="muted">(自分)</span>' : ''}</td>
+      <div class="row" style="flex-wrap:wrap;align-items:flex-end;margin-bottom:6px"><div style="flex:0 1 260px"><label>所属会社で表示</label><select id="uf_co"><option value="">すべての会社</option>${comps.map(c => `<option ${c.name === UF ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}<option value="__none" ${UF === '__none' ? 'selected' : ''}>(未設定)</option></select></div></div>
+      <div class="scroll"><table><tr><th>氏名</th><th>所属会社</th><th>LINE</th><th>権限</th><th>日当(円)</th><th>給料らくだ社員コード</th><th>登録日時</th></tr>
+      ${shown.map(u => `${groupRow(u)}<tr><td><input data-n="${esc(u.userId)}" value="${esc(u.name)}" style="width:130px">${u.userId === S.me.userId ? '<span class="muted">(自分)</span>' : ''}</td>
+        <td>${coSel(u.company, `data-co="${esc(u.userId)}"`)}</td>
         <td>${sameName[u.userId] ? `<span style="color:#b45309;font-weight:700;white-space:nowrap">同名の手動登録あり</span><br><button class="btn sm" style="background:#d97706" data-same="${esc(u.userId)}">紐付ける</button>` : u.line ? '<span class="muted">連携済</span>' : `<span style="color:#b45309">未連携</span><br><button class="btn out sm" data-lk="${esc(u.userId)}">LINEと紐付け</button>`}</td><td><select data-u="${esc(u.userId)}" style="width:auto" ${!S.me.can.admin && u.role === 'admin' ? 'disabled' : ''}>${Object.keys(ROLE).filter(k => S.me.can.admin || k !== 'admin' || u.role === 'admin').map(k => `<option value="${k}" ${k === u.role ? 'selected' : ''}>${ROLE[k]}</option>`).join('')}</select></td>
         <td><input type="number" data-w="${esc(u.userId)}" value="${esc(u.dailyWage || '')}" placeholder="例:18000" style="width:110px"></td><td><input data-ec="${esc(u.userId)}" value="${esc(u.empCode || '')}" placeholder="例:8" style="width:90px"></td><td>${esc(u.createdAt)}</td></tr>`).join('')}
       </table></div>
+      ${shown.length ? '' : '<p class="muted">この会社の人はいません</p>'}
+      <h3>所属会社の一覧</h3>
+      <div class="scroll"><table><tr><th>所属会社</th><th class="n">人数</th><th></th></tr>
+      ${comps.map(c => `<tr><td>${esc(c.name)}${c.memo ? ` <span class="muted">${esc(c.memo)}</span>` : ''}</td><td class="n">${c.users}人</td><td><button class="btn out sm" data-coed="${esc(c.name)}">名前を変更</button> <button class="btn out sm" data-codel="${esc(c.name)}">削除</button></td></tr>`).join('') || '<tr><td colspan="3" class="muted">まだありません</td></tr>'}
+      </table></div>
+      <div style="margin-top:8px"><button class="btn out sm" id="coadd">+ 所属会社を追加</button></div>
+      <p class="muted">所属会社は作業員ごとの「所属会社」のプルダウンで選びます。集計タブ・出勤簿で所属会社ごとに絞り込み・集計できます。</p>
       <p class="muted">日当は原価管理の「労務費」(打刻か日報がある日 × 日当)に使います。職人本人には表示されません。給料らくだ社員コードは、給料らくだの「社員No.」と同じ番号を入れます(KINTAI6.CSVで使います)。</p>
       <h3>権限でできること</h3>
       <p class="muted">管理者:すべて / 事務:管理者の付け外し以外すべて(案件・予定の編集、集計、お金・原価、ユーザーの承認・日当) / 職長:全員の予定と日報を閲覧、打刻・日報 / 職人:自分の予定・打刻・日報のみ / 停止:利用不可</p></div>` : ''}`;
@@ -912,16 +949,43 @@ async function viewAdmin() {
       modal(`<h2>作業員を追加</h2>
         <label>氏名 *</label><input id="u_name" placeholder="例:山田 太郎">
         <label>権限</label><select id="u_role">${roleOpts('worker')}</select>
+        <label>所属会社</label><select id="u_co"><option value="">(未設定)</option>${comps.map(c => `<option ${c.name === (UF && UF !== '__none' ? UF : '') ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}<option value="__new">+ 新しい会社を入力…</option></select>
+        <input id="u_co_new" placeholder="新しい所属会社名" style="display:none;margin-top:6px">
         <label>日当(円)</label><input type="number" id="u_wage" placeholder="例:18000">
         <label>給料らくだ社員コード</label><input id="u_ec" placeholder="例:8">
         <p class="muted">LINEを使っていない人でも、予定の担当・職長や管理者からの代理の日報・給料計算・出勤簿に使えます。あとで本人がLINEで登録したら「LINEと紐付け」で1人にまとめられます(記録も引き継がれます)。</p>
         <div class="row" style="margin-top:14px"><button class="btn" id="u_save">追加</button><button class="btn out" onclick="closeModal()">キャンセル</button></div>`);
+      $('#u_co').onchange = e => { $('#u_co_new').style.display = e.target.value === '__new' ? 'block' : 'none'; };
       $('#u_save').onclick = () => run(async () => {
-        const list = await api('addUser', { name: $('#u_name').value, role: $('#u_role').value, dailyWage: $('#u_wage').value, empCode: $('#u_ec').value });
+        const co = $('#u_co').value === '__new' ? $('#u_co_new').value.trim() : $('#u_co').value;
+        const list = await api('addUser', { name: $('#u_name').value, role: $('#u_role').value, dailyWage: $('#u_wage').value, empCode: $('#u_ec').value, company: co });
         S.members = list.filter(u => ['admin', 'office', 'foreman', 'worker'].indexOf(u.role) >= 0).map(u => ({ userId: u.userId, name: u.name }));
         closeModal(); toast('追加しました'); viewAdmin();
       });
     };
+    const askCompany = (title, val) => new Promise(res => {
+      modal(`<h2>${esc(title)}</h2><label>所属会社名 *</label><input id="co_name" value="${esc(val || '')}" placeholder="例:○○工業(協力会社)">
+        <div class="row" style="margin-top:14px"><button class="btn" id="co_ok">保存</button><button class="btn out" id="co_cancel">キャンセル</button></div>`);
+      $('#co_ok').onclick = () => { const v = $('#co_name').value.trim(); if (!v) { toast('所属会社名を入力してください'); return; } closeModal(); res(v); };
+      $('#co_cancel').onclick = () => { closeModal(); res(null); };
+    });
+    $('#uf_co').onchange = e => { S.userCo = e.target.value; viewAdmin(); };
+    document.querySelectorAll('[data-co]').forEach(sel => sel.onchange = async () => {
+      let v = sel.value;
+      if (v === '__new') { v = await askCompany('新しい所属会社を追加'); if (!v) { viewAdmin(); return; } }
+      await run(async () => { await api('setUser', { userId: sel.dataset.co, company: v }); toast('所属会社を変更しました'); viewAdmin(); });
+    });
+    $('#coadd').onclick = async () => { const v = await askCompany('所属会社を追加'); if (v) run(async () => { await api('saveCompany', { name: v }); toast('追加しました'); viewAdmin(); }); };
+    document.querySelectorAll('[data-coed]').forEach(b => b.onclick = async () => {
+      const v = await askCompany('所属会社の名前を変更', b.dataset.coed);
+      if (v && v !== b.dataset.coed) run(async () => { await api('saveCompany', { oldName: b.dataset.coed, name: v }); if (S.userCo === b.dataset.coed) S.userCo = v; toast('変更しました(所属している人も変わります)'); viewAdmin(); });
+    });
+    document.querySelectorAll('[data-codel]').forEach(b => b.onclick = () => {
+      const c = comps.find(x => x.name === b.dataset.codel);
+      modal(`<h2>所属会社を削除</h2><p>「<b>${esc(c.name)}</b>」を一覧から削除します。${c.users ? `所属している${c.users}人は「(未設定)」になります。` : ''}打刻・日報などの記録は消えません。</p>
+        <div class="row" style="margin-top:14px"><button class="btn" id="cod_ok" style="background:var(--red)">削除する</button><button class="btn out" onclick="closeModal()">キャンセル</button></div>`);
+      $('#cod_ok').onclick = () => run(async () => { await api('saveCompany', { oldName: c.name, remove: true }); if (S.userCo === c.name) S.userCo = ''; closeModal(); toast('削除しました'); viewAdmin(); });
+    });
     document.querySelectorAll('[data-n]').forEach(inp => inp.onchange = () => run(async () => {
       if (!inp.value.trim()) { toast('氏名を入力してください'); return; }
       await api('setUser', { userId: inp.dataset.n, name: inp.value });
