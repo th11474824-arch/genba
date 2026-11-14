@@ -348,26 +348,50 @@ function ymd(d) { return ym(d) + '-' + String(d.getDate()).padStart(2, '0'); }
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.style.display = 'block'; clearTimeout(t._h); t._h = setTimeout(() => t.style.display = 'none', 2600); }
 
 // ---------- API ----------
-async function api(action, params = {}) {
+// ===== 通信(高速化:同じタイミングの問い合わせは1回の通信にまとめて送る) =====
+const APIQ = []; let apiTimer = null;
+function api(action, params = {}) {
+  const key = action + '|' + JSON.stringify(params);
+  if (S.pre && S.pre[key]) { const p = S.pre[key]; delete S.pre[key]; return p; } // 起動時に先読みした分
+  return new Promise((resolve, reject) => {
+    APIQ.push({ action, params, resolve, reject });
+    if (!apiTimer) apiTimer = setTimeout(apiFlush, 0);
+  });
+}
+async function apiPost(body) {
   const ctrl = window.AbortController ? new AbortController() : null;
   const timer = setTimeout(() => { if (ctrl) ctrl.abort(); }, 40000);
   let res;
   try {
     res = await fetch(CONFIG.API_URL, {
-    signal: ctrl ? ctrl.signal : undefined,
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // GASのCORS対策(プリフライトを起こさない)
-    body: JSON.stringify({ action, params, idToken: liff.getIDToken() }),
-  });
+      signal: ctrl ? ctrl.signal : undefined,
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // GASのCORS対策(プリフライトを起こさない)
+      body: JSON.stringify(Object.assign(body, { idToken: liff.getIDToken() })),
+    });
   } catch (e) {
     throw new Error(t('e_net'));
   } finally { clearTimeout(timer); }
-  const j = await res.json();
-  if (!j.ok) {
-    if (String(j.error).indexOf('AUTH') === 0) { liff.logout(); liff.login({ redirectUri: location.href }); throw new Error('再ログインします'); }
-    throw new Error(j.error);
-  }
-  return j.data;
+  return res.json();
+}
+function apiAuthFail(err) {
+  if (String(err).indexOf('AUTH') === 0) { liff.logout(); liff.login({ redirectUri: location.href }); return true; }
+  return false;
+}
+async function apiFlush() {
+  const items = APIQ.splice(0); apiTimer = null;
+  if (!items.length) return;
+  try {
+    if (items.length === 1) {
+      const it = items[0], j = await apiPost({ action: it.action, params: it.params });
+      if (j.ok) return it.resolve(j.data);
+      if (apiAuthFail(j.error)) return it.reject(new Error('再ログインします'));
+      return it.reject(new Error(j.error));
+    }
+    const j = await apiPost({ batch: items.map(it => ({ action: it.action, params: it.params })) });
+    if (!j.ok) { if (apiAuthFail(j.error)) throw new Error('再ログインします'); throw new Error(j.error); }
+    items.forEach((it, i) => { const r = j.results[i] || { ok: false, error: '応答がありません' }; r.ok ? it.resolve(r.data) : it.reject(new Error(r.error)); });
+  } catch (e) { items.forEach(it => it.reject(e)); }
 }
 async function run(fn) { try { return await fn(); } catch (e) { toast(tErr(e.message)); } }
 
@@ -377,7 +401,13 @@ async function run(fn) { try { return await fn(); } catch (e) { toast(tErr(e.mes
     await liff.init({ liffId: CONFIG.LIFF_ID });
     if (!liff.isLoggedIn()) { liff.login({ redirectUri: location.href }); return; }
     applyLang(pickLang(''));
-    const b = await api('bootstrap');
+    // 最初の画面のデータも、起動の問い合わせと同じ通信でまとめて先読みする
+    const q0 = new URLSearchParams(location.search).get('tab') || (liff.isInClient() ? 'home' : ''), m0 = ym(new Date());
+    const pre = { home: [['today', {}]], report: [['today', {}], ['reports', { month: m0 }]], mine: [['myAttendance', { month: m0 }]], advance: [['myAdvances', {}]] }[q0] || [];
+    const bootP = api('bootstrap');
+    S.pre = {};
+    pre.forEach(([a, p]) => { const pr = api(a, p); pr.catch(() => {}); S.pre[a + '|' + JSON.stringify(p)] = pr; });
+    const b = await bootP;
     S.me = b.me; S.sites = b.sites || []; S.members = b.members || [];
     // 言語:リッチメニューから ?lang= 付きで開いた・LINEの言語と保存が違う → サーバーに保存してLINEメニューも切替
     const want = pickLang(S.me.lang);
@@ -577,10 +607,11 @@ function scheduleForm(e) {
 // ---------- 日報 ----------
 async function viewReport() {
   const month = S.repMonth || ym(new Date());
-  const today = await run(() => api('today')) || { records: [], schedules: [] };
+  const [today0, all0] = await Promise.all([run(() => api('today')), run(() => api('reports', { month }))]);
+  const today = today0 || { records: [], schedules: [] };
   const sc0 = today.schedules[0] || {};
   const att = { siteId: sc0.siteId, clockIn: (sc0.start || '').slice(11, 16) || '08:00', clockOut: (sc0.end || '').slice(11, 16) || '17:00' };
-  const all = await run(() => api('reports', { month })) || [];
+  const all = all0 || [];
   // 管理者・事務:絞り込みと編集
   const RF = S.repF || (S.repF = { user: '', site: '', type: '' });
   const canEd = S.me.can.edit;
@@ -694,13 +725,13 @@ async function viewAgg() {
   const month = S.aggMonth || ym(new Date());
   if (S.aggSub === 'roster') return viewRoster(month);
   const load = async () => {
-    const a = await run(() => api('aggregate', { month })); if (!a || S.tab !== 'agg') return;
-    // 案件ごとの見積・請求の状況(お金の権限がある人だけ)
-    const cs = S.me.can.money ? await run(() => api('costSummary', { includeDone: true })) : null;
+    // 集計・見積請求の状況・給料計算・前払いの承認待ちを1回の通信でまとめて取得
+    const M = S.me.can.money;
+    const [a, cs, pr, pend0] = await Promise.all([run(() => api('aggregate', { month })),
+      M ? run(() => api('costSummary', { includeDone: true })) : null, M ? run(() => api('payroll', { month })) : null, M ? run(() => api('advances', { status: '申請中' })) : null]);
+    if (!a || S.tab !== 'agg') return;
+    const pend = M ? pend0 || [] : [];
     const st = {}; (cs ? cs.rows : []).forEach(r => { st[r.siteId] = r; });
-    // 給料計算と前払いの承認待ち(お金の権限がある人だけ)
-    const pr = S.me.can.money ? await run(() => api('payroll', { month })) : null;
-    const pend = S.me.can.money ? await run(() => api('advances', { status: '申請中' })) || [] : [];
     S.pendAdv = pend;
     S.lastAgg = a;
     // 所属会社での絞り込み(給料計算・作業員別)
@@ -714,12 +745,12 @@ async function viewAgg() {
     const coPay = {}; (pr ? pr.rows : []).forEach(r => { const k = r.company || '(未設定)'; const x = coPay[k] || (coPay[k] = { gross: 0, net: 0 }); x.gross += r.gross; x.net += r.net; });
     $('#view').innerHTML = aggSeg() + `<div class="card"><div class="calhead"><h2 style="margin:0">${month} の集計</h2><input type="month" id="am" value="${month}" style="width:auto"></div>
       <div class="stats">
-        <div class="stat">今日の日報 提出<b>${a.totals.reportedToday}人</b></div>
+        <div class="stat">今日の日報 提出<b>${nz(a.totals.reportedToday, 0)}人</b></div>
         <div class="stat">延べ人工<b>${a.totals.manDays}人工</b></div>
         <div class="stat">総労働時間<b>${a.totals.hours}h</b></div>
         <div class="stat">稼働人数<b>${a.totals.workers}人</b></div>
         <div class="stat">経費合計<b>${yen(a.totals.expense)}</b></div>
-      </div>${a.totals.notYetToday.length ? `<p style="margin:8px 0 0"><span class="pill" style="background:#fde8e8;color:#b91c1c">今日の日報 未提出</span> ${esc(a.totals.notYetToday.join('、'))}<span class="muted">(今日の予定の担当者のうち)</span></p>` : ''}
+      </div>${(a.totals.notYetToday || []).length ? `<p style="margin:8px 0 0"><span class="pill" style="background:#fde8e8;color:#b91c1c">今日の日報 未提出</span> ${esc(a.totals.notYetToday.join('、'))}<span class="muted">(今日の予定の担当者のうち)</span></p>` : ''}
       <p class="muted">最終更新 ${esc(a.updatedAt)}(30秒ごとに自動更新)。人工・労働時間は日報(入退場時間−休憩)から計算しています。</p>
       <div style="max-width:300px"><label>所属会社で絞り込み(給料計算・作業員別)</label><select id="aco"><option value="">すべての会社</option>${coList.map(c => `<option ${c === CO ? 'selected' : ''}>${esc(c)}</option>`).join('')}<option value="__none" ${CO === '__none' ? 'selected' : ''}>(未設定)</option></select></div></div>
       ${pend.length ? `<div class="card" style="border:2px solid #f0b429"><h2>前払い申請 承認待ち(${pend.length}件)</h2>
@@ -949,10 +980,11 @@ function csv(key) {
 
 // ---------- 管理(案件・ユーザー) ----------
 async function viewAdmin() {
-  S.sites = await run(() => api('sites')) || S.sites;
-  S.clients = await run(() => api('clients')) || [];
-  const users = S.me.can.users ? (await run(() => api('users')) || []) : null;
-  const comps = users ? (await run(() => api('companies')) || []) : [];
+  const [s0, c0, u0, k0] = await Promise.all([run(() => api('sites')), run(() => api('clients')),
+    S.me.can.users ? run(() => api('users')) : null, S.me.can.users ? run(() => api('companies')) : null]);
+  S.sites = s0 || S.sites; S.clients = c0 || [];
+  const users = S.me.can.users ? (u0 || []) : null;
+  const comps = users ? (k0 || []) : [];
   const ROLE = { admin: '管理者', office: '事務', foreman: '職長', worker: '職人', pending: '承認待ち', disabled: '停止' };
   // 承認待ち(LINE登録)と同じ名前の「未連携(手動追加)」の人を探す(空白の有無は無視)
   const nk = n => String(n || '').replace(/[\s\u3000]/g, '');
