@@ -1190,7 +1190,7 @@ async function viewMoney() {
   $('#view').innerHTML = `<div class="seg">${[['summary', '原価管理表'], ['estimates', '見積書'], ['invoices', '請求書'], ['costs', '原価入力']]
     .map(([k, l]) => `<button data-m="${k}" class="${k === sub ? 'on' : ''}">${l}</button>`).join('')}</div><div id="mview"><div class="card">読み込み中…</div></div>`;
   document.querySelectorAll('[data-m]').forEach(b => b.onclick = () => { S.moneySub = b.dataset.m; viewMoney(); });
-  if (!S.settings) S.settings = await run(() => api('settings')) || {};
+  S.settings = await run(() => api('settings')) || S.settings || {}; // 「設定」シートの変更がすぐ反映されるよう毎回読み直す
   ({ summary: moneySummary, estimates: () => docList('estimates'), invoices: () => docList('invoices'), costs: costInput })[sub]();
 }
 
@@ -1373,10 +1373,12 @@ function wareki(ds) {
   return p[0] >= 2019 ? `令和${y === 1 ? '元' : y}年 ${p[1]}月 ${p[2]}日` : `${p[0]}年 ${p[1]}月 ${p[2]}日`;
 }
 async function printEstimate(d) {
+  // 会社情報(「設定」シート)と印影は、印刷のたびに最新を読み直す
+  const [cfg, sl, ss] = await Promise.all([run(() => api('settings')), run(() => api('seal')), run(() => api('seal', { kind: 'staff' }))]);
+  if (cfg) S.settings = cfg;
+  if (sl) S.seal = sl.data || '';
+  if (ss) S.staffSeal = ss.data || '';
   const c = S.settings || {};
-  const [sl, ss] = await Promise.all([S.seal == null ? run(() => api('seal')) : null, S.staffSeal == null ? run(() => api('seal', { kind: 'staff' })) : null]);
-  if (S.seal == null) S.seal = (sl || {}).data || '';
-  if (S.staffSeal == null) S.staffSeal = (ss || {}).data || '';
   const R = 'class="r"', items = d.items || [], ROWS = Math.max(15, items.length);
   const money = v => (Number(v) ? num(v) : '');
   const row = i => `<tr><td class="nm">${esc(i.name || '')}</td><td ${R}>${i.qty !== '' && i.qty != null && (i.name || i.price) ? esc(i.qty) : ''}</td><td class="u">${esc(i.unit || '')}</td><td ${R}>${i.unit === '式' && Number(i.qty) === 1 ? '' : money(i.price)}</td><td class="sp"></td><td ${R}>${money(i.amount)}</td></tr>`;
@@ -1462,8 +1464,11 @@ async function printEstimate(d) {
 
 // 請求書(会社の書式:タイトル・御中・ご請求金額・工事名称の明細・小計/消費税/合計金額・振込先)
 async function printInvoice(d) {
+  // 会社情報(「設定」シート)と角印は、印刷のたびに最新を読み直す
+  const [cfg, sl] = await Promise.all([run(() => api('settings')), run(() => api('seal'))]);
+  if (cfg) S.settings = cfg;
+  if (sl) S.seal = sl.data || '';
   const c = S.settings || {};
-  if (S.seal == null) S.seal = (await run(() => api('seal')) || {}).data || '';
   const R = 'class="r"', jd = s => { const p = String(s || '').split('-'); return p.length === 3 ? `${p[0]}年${Number(p[1])}月${Number(p[2])}日` : ''; };
   const items = [{ name: d.title, head: true }].concat(d.items);
   const ITEM_ROWS = Math.max(11, items.length), AFTER_ROWS = 7;
