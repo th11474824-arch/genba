@@ -1397,7 +1397,7 @@ async function printEstimate(d) {
     .est .gr{font-size:9pt;margin-top:2mm;line-height:1.45}
     .est .co{width:62mm;position:relative;padding-top:6mm;font-size:8.5pt;line-height:1.45}
     .est .co .cn{font-size:11.5pt;font-weight:700;margin-bottom:.5mm}
-    .est .co img{position:absolute;right:-2mm;top:-1.5mm;width:20mm;height:20mm;object-fit:contain}
+    .est .co img{position:absolute;right:-2mm;top:-1.5mm;width:20mm;height:20mm;object-fit:contain;mix-blend-mode:multiply}
     .est .row2{display:flex;justify-content:space-between;align-items:flex-start;margin-top:4mm}
     .est .tot{display:flex;align-items:flex-end;border-bottom:1.8px solid #000;width:112mm;padding:0 1mm .3mm;font-size:16pt}
     .est .tot b{font-weight:400;font-size:20pt;margin-left:22mm}
@@ -1407,7 +1407,7 @@ async function printEstimate(d) {
     .est .stamp{border-collapse:collapse;width:64mm;margin-top:7mm}
     .est .stamp th,.est .stamp td{border:1px solid #000;font-size:7.5pt;font-weight:400;text-align:center;padding:0}
     .est .stamp th{height:4.2mm}.est .stamp td{height:19mm}
-    .est .stamp img{width:15mm;height:15mm;object-fit:contain;display:block;margin:0 1mm 0 auto;opacity:.85}
+    .est .stamp img{width:15mm;height:15mm;object-fit:contain;display:block;margin:0 1mm 0 auto;opacity:.85;mix-blend-mode:multiply}
     .est .name{display:flex;align-items:flex-end;border-bottom:1px solid #000;margin:3mm 0 0 18mm;padding:0 0 .5mm}
     .est .name .k{font-size:13pt;margin-right:10mm}.est .name .v{font-size:11pt}
     .est table.it{width:100%;border-collapse:collapse;margin-top:3.5mm;border:1.6px solid #000}
@@ -1488,7 +1488,7 @@ async function printInvoice(d) {
     .inv .amt b{margin-left:auto;font-size:17pt;font-weight:500} .inv .amt small{font-size:9pt;margin-left:2mm}
     .inv .co{width:66mm;position:relative;font-size:9.5pt;line-height:1.55;padding-top:1mm}
     .inv .co .cn{font-size:12.5pt;margin-bottom:.5mm}
-    .inv .co img{position:absolute;right:0;top:-1mm;width:17mm;height:17mm;object-fit:contain}
+    .inv .co img{position:absolute;right:0;top:-1mm;width:17mm;height:17mm;object-fit:contain;mix-blend-mode:multiply}
     .inv table{width:100%;border-collapse:collapse;margin-top:5mm;border:1.6px solid #000}
     .inv th,.inv td{border:1px solid #000;height:6.1mm;padding:0 1.5mm;font-size:9.5pt}
     .inv th{font-weight:400;font-size:9pt;border-bottom:1.6px solid #000;text-align:center;color:#000;background:#fff;white-space:nowrap}
@@ -1536,15 +1536,28 @@ function sealForm(kind) {
     <p class="muted">${st ? '見積書の右上の「担当者」欄に印刷されます。' : '見積書・請求書の会社名の右側に印刷されます。'}背景が透明か白の画像(PNG・JPEG)を選んでください。画像はスプレッドシートに保存され、外部には公開されません。</p>
     ${cur ? `<p>現在の${NM}:<br><img src="${cur}" style="width:90px;height:90px;object-fit:contain;border:1px solid #ddd;border-radius:8px"></p>` : '<p class="muted">まだ登録されていません。</p>'}
     <input type="file" id="sealFile" accept="image/png,image/jpeg">
+    <div class="chips" style="margin-top:8px"><label><input type="checkbox" id="sealClear" checked>白い背景を透明にする(おすすめ)</label></div>
     <div class="row" style="margin-top:14px"><button class="btn" id="sealSave">登録する</button>${cur ? '<button class="btn red" id="sealDel">削除</button>' : ''}<button class="btn out" onclick="closeModal()">閉じる</button></div>`);
   $('#sealSave').onclick = () => run(async () => {
     const f = $('#sealFile').files[0]; if (!f) throw new Error('画像を選んでください');
     const img = await new Promise((ok, ng) => { const i = new Image(); i.onload = () => ok(i); i.onerror = ng; i.src = URL.createObjectURL(f); });
     const cv = document.createElement('canvas'), sz = 240, k = Math.min(sz / img.width, sz / img.height, 1);
     cv.width = Math.round(img.width * k); cv.height = Math.round(img.height * k);
-    cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+    const cx = cv.getContext('2d');
+    cx.drawImage(img, 0, 0, cv.width, cv.height);
+    // 白い背景を自動で透明にする(朱色の部分だけ残す。下の文字が透けて見える)
+    if ($('#sealClear').checked) {
+      const im = cx.getImageData(0, 0, cv.width, cv.height), px = im.data;
+      for (let i = 0; i < px.length; i += 4) {
+        const a = Math.max(0, Math.min(255, Math.round((255 - Math.min(px[i + 1], px[i + 2])) * 1.6))) * px[i + 3] / 255;
+        if (a < 12) { px[i + 3] = 0; continue; }
+        if (a < 200) { px[i] = 220; px[i + 1] = 30; px[i + 2] = 40; }
+        px[i + 3] = a;
+      }
+      cx.putImageData(im, 0, 0);
+    }
     let data = cv.toDataURL('image/png');
-    if (data.length > 300000) { const c2 = document.createElement('canvas'); c2.width = cv.width; c2.height = cv.height; const x = c2.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c2.width, c2.height); x.drawImage(cv, 0, 0); data = c2.toDataURL('image/jpeg', 0.9); }
+    if (data.length > 600000) { const c2 = document.createElement('canvas'); c2.width = cv.width; c2.height = cv.height; const x = c2.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c2.width, c2.height); x.drawImage(cv, 0, 0); data = c2.toDataURL('image/jpeg', 0.9); }
     await api('saveSeal', { data, kind }); S[K] = data; closeModal(); toast(NM + 'を登録しました');
   });
   if ($('#sealDel')) $('#sealDel').onclick = () => { if (confirm(NM + 'を削除しますか?')) run(async () => { await api('saveSeal', { data: '', kind }); S[K] = ''; closeModal(); toast('削除しました'); }); };
