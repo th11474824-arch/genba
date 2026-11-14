@@ -162,7 +162,17 @@ var D = {
   role_worker: ['職人', 'Worker', 'Công nhân', 'Pekerja', 'Manggagawa'],
   role_pending: ['承認待ち', 'Pending', 'Chờ duyệt', 'Menunggu', 'Naghihintay'],
   role_disabled: ['停止', 'Disabled', 'Đã khóa', 'Nonaktif', 'Hindi aktibo'],
-  tab_home: ['打刻', 'Clock In/Out', 'Chấm công', 'Absen', 'Time In/Out'],
+  tab_home: ['今日', 'Today', 'Hôm nay', 'Hari ini', 'Ngayon'],
+  repDoneToday: ['今日の日報は提出済みです', "Today's report has been submitted", 'Đã nộp báo cáo hôm nay', 'Laporan hari ini sudah dikirim', 'Naipasa na ang ulat ngayong araw'],
+  repNotYet: ['今日の日報はまだです', "Today's report is not submitted yet", 'Chưa nộp báo cáo hôm nay', 'Laporan hari ini belum dikirim', 'Hindi pa naipapasa ang ulat ngayong araw'],
+  repNotYetSub: ['作業が終わったら、日報を提出してください。出勤日数・残業代は日報から計算されます。', 'After work, please submit your daily report. Days worked and overtime pay are calculated from it.', 'Sau khi làm xong, hãy nộp báo cáo. Số ngày làm và tiền tăng ca được tính từ báo cáo.', 'Setelah selesai bekerja, kirim laporan harian. Hari kerja dan uang lembur dihitung dari laporan.', 'Pagkatapos ng trabaho, ipasa ang ulat. Dito kinukuwenta ang araw ng trabaho at OT.'],
+  writeRep: ['日報を書く', 'Write daily report', 'Viết báo cáo', 'Tulis laporan', 'Sumulat ng ulat'],
+  addRep: ['別の現場・加工の日報を追加', 'Add another report', 'Thêm báo cáo khác', 'Tambah laporan lain', 'Magdagdag ng isa pang ulat'],
+  nightShort: ['深夜残業', 'Night OT', 'Tăng ca đêm', 'Lembur malam', 'Night OT'],
+  monthWork: ['今月の勤務', 'This month', 'Tháng này', 'Bulan ini', 'Ngayong buwan'],
+  seeMine: ['自分の記録を見る', 'See my records', 'Xem hồ sơ', 'Lihat catatan saya', 'Tingnan ang aking rekord'],
+  bentoCnt: ['弁当', 'Lunch box', 'Cơm hộp', 'Bekal', 'Baon'],
+  mineNote: ['日報から集計しています。間違いがあるときは職長か事務所に連絡してください。', 'Calculated from your daily reports. If something is wrong, tell your foreman or the office.', 'Tính từ báo cáo ngày. Nếu sai, hãy báo tổ trưởng hoặc văn phòng.', 'Dihitung dari laporan harian. Jika ada yang salah, hubungi mandor atau kantor.', 'Kinuwenta mula sa iyong ulat. Kung may mali, sabihan ang foreman o opisina.'],
   tab_cal: ['予定', 'Schedule', 'Lịch', 'Jadwal', 'Iskedyul'],
   tab_report: ['日報', 'Daily Report', 'Báo cáo', 'Laporan', 'Ulat'],
   tab_mine: ['自分の記録', 'My Records', 'Hồ sơ của tôi', 'Catatan Saya', 'Aking Rekord'],
@@ -417,7 +427,7 @@ function renderRegister() {
 }
 
 const TABS = [
-  { id: 'home', label: '打刻', perm: 'self' },
+  { id: 'home', label: '今日', perm: 'self' },
   { id: 'cal', label: '予定', perm: 'self' },
   { id: 'report', label: '日報', perm: 'self' },
   { id: 'mine', label: '自分の記録', perm: 'self' },
@@ -441,26 +451,30 @@ function show(tab) {
 const siteOptions = (sel, includeDone) => S.sites.filter(s => includeDone || s.status !== '完了')
   .map(s => `<option value="${esc(s.siteId)}" ${s.siteId === sel ? 'selected' : ''}>${esc(s.name)}${s.client ? '(' + esc(s.client) + ')' : ''}</option>`).join('');
 
-// ---------- 打刻 ----------
+// ---------- 今日(日報の提出状況・今日の予定・今月の勤務) ----------
 async function viewHome() {
   const td = await run(() => api('today')); if (!td) return;
-  const open = td.records.find(r => !r.clockOut);
-  const firstSite = (td.schedules[0] || {}).siteId;
+  const reps = td.reports || [], ms = td.month || {};
+  const W = t('weekdays').split(','), dt = new Date(td.date + 'T00:00:00');
+  const dateLbl = L === 'ja' ? `${dt.getMonth() + 1}月${dt.getDate()}日(${W[dt.getDay()]})` : `${td.date} (${W[dt.getDay()]})`;
   $('#view').innerHTML = `
-    <div class="card">
-      <div class="muted" style="text-align:center">${td.date}</div>
-      <div class="clock" id="clk"></div>
-      ${open ? `<p style="text-align:center"><span class="pill">${t('working')}</span> ${esc(open.clockIn)}〜 ${esc((S.sites.find(s => s.siteId === open.siteId) || {}).name || '')}</p>
-        <button class="btn big red" id="out">${t('clockOut')}</button>`
-      : `<label>${t('site')}</label><select id="site"><option value="">${t('select')}</option>${siteOptions(firstSite)}</select>
-        <button class="btn big" id="in">${t('clockIn')}</button>`}
+    <div class="card" style="text-align:center">
+      <div style="font-size:22px;font-weight:700">${esc(dateLbl)}</div>
+      <div class="clock" id="clk" style="font-size:30px"></div>
     </div>
+    ${reps.length ? `<div class="card" style="border:2px solid var(--g)"><h2 style="color:var(--g)">✓ ${t('repDoneToday')}</h2>
+        ${reps.map(r => `<div class="list-item"><span class="pill ${r.workType === '加工' ? 'blue' : ''}">${esc(t('wt_' + (r.workType || '現場')))}</span> <b>${esc(r.siteName)}</b> ${esc(r.start)}-${esc(r.end)}${r.otHours ? ' / ' + t('otNormal') + ' ' + esc(r.otHours) + 'h' : ''}${r.nightHours ? ' / ' + t('otNight') + ' ' + esc(r.nightHours) + 'h' : ''}</div>`).join('')}
+        <button class="btn out" id="goRep" style="width:100%;margin-top:10px">${t('addRep')}</button></div>`
+      : `<div class="card" style="border:2px solid #f0b429;background:#fffaf0"><h2>${t('repNotYet')}</h2><p class="muted" style="margin-top:0">${t('repNotYetSub')}</p>
+        <button class="btn big" id="goRep">${t('writeRep')}</button></div>`}
     <div class="card"><h2>${t('todaySched')}</h2>${td.schedules.length ? td.schedules.map(evLine).join('') : `<p class="muted">${t('noTodaySched')}</p>`}</div>
-    <div class="card"><h2>${t('todayPunch')}</h2>${td.records.length ? td.records.map(r => `<div class="list-item">${esc(r.clockIn)} 〜 ${esc(r.clockOut || '')} ${r.hours ? '(' + r.hours + 'h)' : ''}</div>`).join('') : `<p class="muted">${t('none')}</p>`}</div>`;
-  const tick = () => { const n = new Date(); const c = $('#clk'); if (c) c.textContent = n.toTimeString().slice(0, 8); };
-  tick(); S.timer = setInterval(tick, 1000);
-  if ($('#in')) $('#in').onclick = () => run(async () => { await api('clockIn', { siteId: $('#site').value }); toast(t('inDone')); viewHome(); });
-  if ($('#out')) $('#out').onclick = () => run(async () => { const r = await api('clockOut'); toast(t('outDone', { h: r.hours })); viewHome(); });
+    <div class="card"><h2>${t('monthWork')}</h2>
+      <div class="stats"><div class="stat">${t('daysWorked')}<b>${t('daysN', { n: nz(ms.days, 0) })}</b></div><div class="stat">${t('ot')}<b>${nz(ms.otHours, 0)}h</b></div><div class="stat">${t('nightShort')}<b>${nz(ms.nightHours, 0)}h</b></div></div>
+      <button class="btn out sm" id="goMine" style="margin-top:10px">${t('seeMine')}</button></div>`;
+  const tick = () => { const n = new Date(); const c = $('#clk'); if (c) c.textContent = n.toTimeString().slice(0, 5); };
+  tick(); S.timer = setInterval(tick, 10000);
+  $('#goRep').onclick = () => show('report');
+  $('#goMine').onclick = () => show('mine');
 }
 function evLine(e) {
   return `<div class="list-item"><span class="sw" style="background:${esc(e.color)}"></span><b>${esc(e.siteName)}</b> ${esc(e.title)}
@@ -564,7 +578,8 @@ function scheduleForm(e) {
 async function viewReport() {
   const month = S.repMonth || ym(new Date());
   const today = await run(() => api('today')) || { records: [], schedules: [] };
-  const att = today.records[0] || {};
+  const sc0 = today.schedules[0] || {};
+  const att = { siteId: sc0.siteId, clockIn: (sc0.start || '').slice(11, 16) || '08:00', clockOut: (sc0.end || '').slice(11, 16) || '17:00' };
   const all = await run(() => api('reports', { month })) || [];
   // 管理者・事務:絞り込みと編集
   const RF = S.repF || (S.repF = { user: '', site: '', type: '' });
@@ -662,9 +677,11 @@ async function viewMine() {
   const month = S.mineMonth || ym(new Date());
   const d = await run(() => api('myAttendance', { month })); if (!d) return;
   $('#view').innerHTML = `<div class="card"><div class="calhead"><h2 style="margin:0">${t('mineTitle')}</h2><input type="month" id="mm" value="${month}" style="width:auto"></div>
-    <div class="stats"><div class="stat">${t('daysWorked')}<b>${t('daysN', { n: d.days })}</b></div><div class="stat">${t('hoursWorked')}<b>${d.hours}h</b></div></div>
-    <div class="scroll" style="margin-top:12px"><table><tr><th>${t('th_date')}</th><th>${t('site')}</th><th>${t('th_in')}</th><th>${t('th_out')}</th><th class="n">${t('th_time')}</th></tr>
-    ${d.records.map(r => `<tr><td>${esc(r.date)}</td><td>${esc(r.siteName)}</td><td>${esc(r.clockIn)}</td><td>${esc(r.clockOut || '—')}</td><td class="n">${esc(r.hours)}</td></tr>`).join('') || `<tr><td colspan="5" class="muted">${t('noRec')}</td></tr>`}</table></div></div>`;
+    <div class="stats"><div class="stat">${t('daysWorked')}<b>${t('daysN', { n: d.days })}</b></div><div class="stat">${t('hoursWorked')}<b>${d.hours}h</b></div>
+      <div class="stat">${t('ot')}<b>${nz(d.otHours, 0)}h</b></div><div class="stat">${t('nightShort')}<b>${nz(d.nightHours, 0)}h</b></div><div class="stat">${t('bentoCnt')}<b>${nz(d.bento, 0)}</b></div></div>
+    <div class="scroll" style="margin-top:12px"><table><tr><th>${t('th_date')}</th><th>${t('th_type')}</th><th>${t('site')}</th><th>${t('inout')}</th><th>${t('th_ot')}</th><th>${t('bento')}</th></tr>
+    ${d.records.map(r => `<tr><td>${esc(r.date)}</td><td><span class="pill ${r.workType === '加工' ? 'blue' : ''}">${esc(t('wt_' + (r.workType || '現場')))}</span></td><td>${esc(r.siteName)}</td><td>${esc(r.start)}-${esc(r.end)}</td><td>${r.otHours ? t('otNormal') + ' ' + esc(r.otHours) + 'h' : ''}${r.otHours && r.nightHours ? '<br>' : ''}${r.nightHours ? t('otNight') + ' ' + esc(r.nightHours) + 'h' : ''}</td><td style="text-align:center">${esc(r.bento || '')}</td></tr>`).join('') || `<tr><td colspan="6" class="muted">${t('noRec')}</td></tr>`}</table></div>
+    <p class="muted">${t('mineNote')}</p></div>`;
   $('#mm').onchange = e => { S.mineMonth = e.target.value; viewMine(); };
 }
 
@@ -697,12 +714,13 @@ async function viewAgg() {
     const coPay = {}; (pr ? pr.rows : []).forEach(r => { const k = r.company || '(未設定)'; const x = coPay[k] || (coPay[k] = { gross: 0, net: 0 }); x.gross += r.gross; x.net += r.net; });
     $('#view').innerHTML = aggSeg() + `<div class="card"><div class="calhead"><h2 style="margin:0">${month} の集計</h2><input type="month" id="am" value="${month}" style="width:auto"></div>
       <div class="stats">
-        <div class="stat">いま現場にいる人<b>${a.totals.onSiteNow}人</b></div>
+        <div class="stat">今日の日報 提出<b>${a.totals.reportedToday}人</b></div>
         <div class="stat">延べ人工<b>${a.totals.manDays}人工</b></div>
         <div class="stat">総労働時間<b>${a.totals.hours}h</b></div>
         <div class="stat">稼働人数<b>${a.totals.workers}人</b></div>
         <div class="stat">経費合計<b>${yen(a.totals.expense)}</b></div>
-      </div><p class="muted">最終更新 ${esc(a.updatedAt)}(30秒ごとに自動更新)</p>
+      </div>${a.totals.notYetToday.length ? `<p style="margin:8px 0 0"><span class="pill" style="background:#fde8e8;color:#b91c1c">今日の日報 未提出</span> ${esc(a.totals.notYetToday.join('、'))}<span class="muted">(今日の予定の担当者のうち)</span></p>` : ''}
+      <p class="muted">最終更新 ${esc(a.updatedAt)}(30秒ごとに自動更新)。人工・労働時間は日報(入退場時間−休憩)から計算しています。</p>
       <div style="max-width:300px"><label>所属会社で絞り込み(給料計算・作業員別)</label><select id="aco"><option value="">すべての会社</option>${coList.map(c => `<option ${c === CO ? 'selected' : ''}>${esc(c)}</option>`).join('')}<option value="__none" ${CO === '__none' ? 'selected' : ''}>(未設定)</option></select></div></div>
       ${pend.length ? `<div class="card" style="border:2px solid #f0b429"><h2>前払い申請 承認待ち(${pend.length}件)</h2>
         <div class="scroll"><table><tr><th>申請日</th><th>氏名</th><th class="n">金額</th><th>理由</th><th></th></tr>
@@ -716,12 +734,12 @@ async function viewAgg() {
           <td class="n">${r.otHours}h</td><td class="n">${num(r.otPay)}</td><td class="n">${r.nightHours}h</td><td class="n">${num(r.nightPay)}</td><td class="n">${num(r.gross)}</td>
           <td class="n">${r.advance ? '−' + num(r.advance) + (r.advCount > 1 ? `<br><span class="muted" style="font-size:11px">${r.advCount}回</span>` : '') : '0'}</td>
           <td class="n"><b class="${r.net < 0 ? 'neg' : ''}">${num(r.net)}</b></td><td class="n">${r.bentoCount}食</td></tr>`).join('') || '<tr><td colspan="13" class="muted">この月の勤務はありません</td></tr>'}</table></div>
-        <p class="muted">基本給=出勤日数(打刻か日報がある日)×日当(所属会社に単価があれば会社単価)。残業・深夜残業=日報で選んだ時間の合計。
+        <p class="muted">基本給=出勤日数(日報がある日)×日当(所属会社に単価があれば会社単価)。残業・深夜残業=日報で選んだ時間の合計。
           残業単価=日当÷${pr.rule.std}×${pr.rule.rate}、深夜残業単価=日当÷${pr.rule.std}×${pr.rule.nightRate}。
           弁当=日報で弁当「○」の日数(個数のみ。給料からは差し引きません)。日報の経費は給料に含めません。所得税・社会保険などの控除は含みません。行をタップすると日ごとの内訳が出ます。</p></div>` : ''}
       ${table('所属会社別', 'companies', ['所属会社', '人数', '延べ人工', '労働時間(h)', '現場数', '現場ごとの人工'].concat(pr ? ['総支給(円)', '差引支給額(円)'] : []),
         a.companies.map(k => [k.company, k.people, k.manDays, k.hours, k.sites, k.bySite.map(b => b.site + ' ' + b.manDays).join(' / ')].concat(pr ? [(coPay[k.company] || {}).gross || 0, (coPay[k.company] || {}).net || 0] : [])))}
-      ${table('作業員別(勤務日数)' + (coLabel ? ' / ' + esc(coLabel) : ''), 'workers', ['氏名', '所属会社', '出勤日数', '労働時間(h)', '現場数', '未退勤'], a.workers.filter(w => coOk(w.company)).map(w => [w.name, w.company, w.days, w.hours, w.sites, w.open || '']))}
+      ${table('作業員別(勤務日数)' + (coLabel ? ' / ' + esc(coLabel) : ''), 'workers', ['氏名', '所属会社', '出勤日数', '労働時間(h)', '通常残業(h)', '深夜残業(h)', '現場数'], a.workers.filter(w => coOk(w.company)).map(w => [w.name, w.company, w.days, w.hours, w.otHours || '', w.nightHours || '', w.sites]))}
       ${table('現場(案件)別', 'sites', ['現場', '元請', '見積', '請求', '未請求額(円)', '延べ人工', '労働時間(h)', '人数', '経費(円)', '実行予算(円)'],
         a.sites.map(s => { const x = st[s.siteId] || {}; return [s.name, s.client, x.estStatus ? { html: pill(x.estStatus), text: x.estStatus } : '—', x.billStatus ? { html: pill(x.billStatus), text: x.billStatus } : '—', nz(x.unbilled, ''), s.manDays, s.hours, s.workers, s.expense, s.budget || '']; }))}
       ${table('元請別', 'clients', ['元請', '延べ人工', '労働時間(h)', '現場数', '経費(円)'], a.clients.map(c => [c.client, c.manDays, c.hours, c.sites, c.expense]))}
@@ -982,9 +1000,9 @@ async function viewAdmin() {
       <div style="margin-top:8px"><button class="btn out sm" id="coadd">+ 所属会社を追加</button></div>
       <p class="muted"><b>単価</b>を入れた会社の人は、個人の日当ではなく会社の単価で給料計算(基本給・残業単価)と原価の労務費を計算します。空欄の会社の人は、今までどおり個人の日当を使います。</p>
       <p class="muted">所属会社は作業員ごとの「所属会社」のプルダウンで選びます。集計タブ・出勤簿で所属会社ごとに絞り込み・集計できます。</p>
-      <p class="muted">日当は原価管理の「労務費」(打刻か日報がある日 × 日当)に使います。職人本人には表示されません。給料らくだ社員コードは、給料らくだの「社員No.」と同じ番号を入れます(KINTAI6.CSVで使います)。</p>
+      <p class="muted">日当は原価管理の「労務費」(日報がある日 × 日当)に使います。職人本人には表示されません。給料らくだ社員コードは、給料らくだの「社員No.」と同じ番号を入れます(KINTAI6.CSVで使います)。</p>
       <h3>権限でできること</h3>
-      <p class="muted">管理者:すべて / 事務:管理者の付け外し以外すべて(案件・予定の編集、集計、お金・原価、ユーザーの承認・日当) / 職長:全員の予定と日報を閲覧、打刻・日報 / 職人:自分の予定・打刻・日報のみ / 停止:利用不可</p></div>` : ''}`;
+      <p class="muted">管理者:すべて / 事務:管理者の付け外し以外すべて(案件・予定の編集、集計、お金・原価、ユーザーの承認・日当) / 職長:全員の予定と日報を閲覧、日報(まとめて提出) / 職人:自分の予定・日報・記録・前払いのみ / 停止:利用不可</p></div>` : ''}`;
   $('#sadd').onclick = () => siteForm({});
   document.querySelectorAll('[data-cc]').forEach(inp => inp.onchange = () => run(async () => { await api('saveClient', { name: inp.dataset.cc, color: inp.value }); toast('色を変更しました'); viewAdmin(); }));
   $('#cadd').onclick = () => {
@@ -1049,17 +1067,17 @@ async function viewAdmin() {
       const done = list => { S.members = list.filter(x => ['admin', 'office', 'foreman', 'worker'].indexOf(x.role) >= 0).map(x => ({ userId: x.userId, name: x.name })); closeModal(); viewAdmin(); };
       modal(`<h2>「${esc(u.name)}」を削除</h2>
         ${has ? `<p>この人には次の記録があります。</p>
-          <table><tr><td>打刻</td><td class="n">${rc.attendance}件</td></tr><tr><td>日報</td><td class="n">${rc.reports}件</td></tr><tr><td>前払い</td><td class="n">${rc.advances}件</td></tr><tr><td>担当している予定</td><td class="n">${rc.schedules}件</td></tr></table>
+          <table>${rc.attendance ? `<tr><td>過去の打刻</td><td class="n">${rc.attendance}件</td></tr>` : ""}<tr><td>日報</td><td class="n">${rc.reports}件</td></tr><tr><td>前払い</td><td class="n">${rc.advances}件</td></tr><tr><td>担当している予定</td><td class="n">${rc.schedules}件</td></tr></table>
           <p class="muted" style="margin-top:10px"><b>辞めた人は「停止にする」がおすすめです。</b>ログインできなくなり、予定の担当や代理の日報の候補からも外れますが、過去の給料計算・出勤簿・原価(労務費)の記録はそのまま残ります。</p>
-          <p class="muted">「記録ごと削除」すると、この人の打刻・日報・前払いもすべて消え、過去の月の給料計算・出勤簿・原価の数字も変わります。元に戻せません。</p>
+          <p class="muted">「記録ごと削除」すると、この人の日報・前払い(過去の打刻も)もすべて消え、過去の月の給料計算・出勤簿・原価の数字も変わります。元に戻せません。</p>
           <div class="row" style="margin-top:14px;flex-wrap:wrap"><button class="btn" id="del_stop">停止にする</button><button class="btn" id="del_all" style="background:var(--red)">記録ごと削除</button><button class="btn out" onclick="closeModal()">キャンセル</button></div>`
-        : `<p>打刻・日報・前払いの記録はありません。一覧から削除します${rc.schedules ? `(担当している予定${rc.schedules}件からも外れます。予定自体は残ります)` : ''}。</p>
+        : `<p>日報・前払いの記録はありません。一覧から削除します${rc.schedules ? `(担当している予定${rc.schedules}件からも外れます。予定自体は残ります)` : ''}。</p>
           ${u.line ? '<p class="muted">LINEで登録している人なので、本人がもう一度アプリを開くと「承認待ち」として申請し直せます。</p>' : ''}
           <div class="row" style="margin-top:14px"><button class="btn" id="del_one" style="background:var(--red)">削除する</button><button class="btn out" onclick="closeModal()">キャンセル</button></div>`}`);
       if ($('#del_one')) $('#del_one').onclick = () => run(async () => { done(await api('deleteUser', { userId: u.userId })); toast('削除しました'); });
       if ($('#del_stop')) $('#del_stop').onclick = () => run(async () => { await api('setUser', { userId: u.userId, role: 'disabled' }); S.members = S.members.filter(x => x.userId !== u.userId); closeModal(); toast('停止にしました'); viewAdmin(); });
       if ($('#del_all')) $('#del_all').onclick = () => {
-        if (!confirm('「' + u.name + '」の打刻・日報・前払いの記録もすべて削除します。元に戻せません。よろしいですか?')) return;
+        if (!confirm('「' + u.name + '」の日報・前払い(過去の打刻も)の記録をすべて削除します。元に戻せません。よろしいですか?')) return;
         run(async () => { done(await api('deleteUser', { userId: u.userId, withRecords: true })); toast('記録ごと削除しました'); });
       };
     }));
@@ -1090,7 +1108,7 @@ async function viewAdmin() {
       modal(`<h2>LINEと紐付け</h2>
         <p>「<b>${esc(mu.name)}</b>」(手動追加)を、LINEで登録した本人とまとめます。</p>
         <label>LINEで登録した人</label><select id="lk_to">${cands.map(u => `<option value="${esc(u.userId)}">${esc(u.name)}(${ROLE[u.role] || u.role}・${esc(u.createdAt)})</option>`).join('') || '<option value="">該当者なし</option>'}</select>
-        <p class="muted">・打刻/日報/予定/前払いの記録は「${esc(mu.name)}」のものが本人に引き継がれます。<br>・氏名・権限・日当・社員コードは「${esc(mu.name)}」の設定が残ります。<br>・選んだLINE側の行は1つにまとめられて消えます。元に戻せないので、本人に間違いないか確認してください。</p>
+        <p class="muted">・日報/予定/前払いの記録は「${esc(mu.name)}」のものが本人に引き継がれます。<br>・氏名・権限・日当・社員コードは「${esc(mu.name)}」の設定が残ります。<br>・選んだLINE側の行は1つにまとめられて消えます。元に戻せないので、本人に間違いないか確認してください。</p>
         <div class="row" style="margin-top:14px"><button class="btn" id="lk_ok" ${cands.length ? '' : 'disabled'}>紐付ける</button><button class="btn out" onclick="closeModal()">キャンセル</button></div>`);
       $('#lk_ok').onclick = () => { const to = $('#lk_to').value; if (to) doLink(mu.userId, to); };
     });
@@ -1192,7 +1210,7 @@ async function costDetail(r, C) {
   const jouyou = r.contractType === '常用';
   modal(`<h2>${esc(r.name)} の原価内訳 <span class="pill ${jouyou ? 'tmp' : ''}">${esc(r.contractType)}</span></h2>
     ${jouyou ? `<div class="card" style="background:var(--g2)"><b>常用の請求書を作る</b>
-      <p class="muted" style="margin:4px 0">選んだ月の打刻・日報から、作業員ごとの人工 × 常用単価(${r.unitPrice ? num(r.unitPrice) + '円' : '未設定'})で請求書を作ります。</p>
+      <p class="muted" style="margin:4px 0">選んだ月の日報から、作業員ごとの人工 × 常用単価(${r.unitPrice ? num(r.unitPrice) + '円' : '未設定'})で請求書を作ります。</p>
       <div class="row"><input type="month" id="jy_m" value="${ym(new Date())}"><button class="btn" id="jy_go">請求書を作成</button></div></div>` : ''}
     <p>見積:${pill(r.estStatus)} 請求:${pill(r.billStatus)}${r.draft ? ` <span class="muted">(未送付の請求書 ${r.draft}件)</span>` : ''}
       未請求額 <b class="${r.unbilled ? 'neg' : ''}">${yen(r.unbilled)}</b> / 未入金額 <b>${yen(r.unpaid)}</b></p>
