@@ -565,7 +565,13 @@ async function viewReport() {
   const month = S.repMonth || ym(new Date());
   const today = await run(() => api('today')) || { records: [], schedules: [] };
   const att = today.records[0] || {};
-  const list = await run(() => api('reports', { month })) || [];
+  const all = await run(() => api('reports', { month })) || [];
+  // 管理者・事務:絞り込みと編集
+  const RF = S.repF || (S.repF = { user: '', site: '', type: '' });
+  const canEd = S.me.can.edit;
+  const list = canEd ? all.filter(r => (!RF.user || r.userId === RF.user) && (!RF.site || r.siteId === RF.site) && (!RF.type || (r.workType || '現場') === RF.type)) : all;
+  const fUsers = [...new Map(all.map(r => [r.userId, r.name])).entries()].sort((a, b) => (a[1] < b[1] ? -1 : 1));
+  const fSites = [...new Map(all.map(r => [r.siteId, r.siteName])).entries()].sort((a, b) => (a[1] < b[1] ? -1 : 1));
   $('#view').innerHTML = `<div class="card"><h2>${t('repTitle')}</h2>
     <label>${t('repDate')} *</label><input type="date" id="r_date" value="${ymd(new Date())}">
     <label>${t('workType')} *</label><div class="seg" id="r_type" style="margin-bottom:0"><button type="button" data-wt="現場" class="on">${t('wt_現場')}</button><button type="button" data-wt="加工">${t('wt_加工')}</button></div>
@@ -583,12 +589,23 @@ async function viewReport() {
       <p class="muted">${t('proxyNote')}</p>` : ''}
     <button class="btn big" id="r_save">${t('submit')}</button></div>
     <div class="card"><div class="calhead"><h2 style="margin:0">${S.me.can.viewAll ? t('repList') : t('myReps')}</h2><input type="month" id="r_m" value="${month}" style="width:auto"></div>
-    <div class="scroll"><table><tr><th>${t('th_date')}</th><th>${t('th_author')}</th><th>${t('th_type')}</th><th>${t('site')}</th><th>${t('th_time')}</th><th>${t('th_ot')}</th><th>${t('bento')}</th><th>${t('content')}</th><th class="n">${t('expense')}</th></tr>
-    ${list.map(r => `<tr><td>${esc(r.date)}</td><td>${esc(r.name)}${r.submittedBy ? `<br><span class="muted" style="font-size:11px">${esc(t('proxyBy', { n: r.submittedBy }))}</span>` : ''}</td><td><span class="pill ${r.workType === '加工' ? 'blue' : ''}">${esc(t('wt_' + (r.workType || '現場')))}</span></td><td>${esc(r.siteName)}</td><td>${esc(r.start)}-${esc(r.end)}</td><td>${r.otHours ? t('otNormal') + ' ' + esc(r.otHours) + 'h' : ''}${r.otHours && r.nightHours ? '<br>' : ''}${r.nightHours ? t('otNight') + ' ' + esc(r.nightHours) + 'h' : ''}</td><td style="text-align:center">${esc(r.bento || '')}</td><td style="white-space:normal;min-width:180px">${esc(r.content)}</td><td class="n">${r.expenseAmount ? esc(t('ex_' + r.expenseType)) + ' ' + yen(r.expenseAmount) : ''}</td></tr>`).join('') || `<tr><td colspan="9" class="muted">${t('none')}</td></tr>`}
+    ${canEd ? `<div class="row" style="flex-wrap:wrap;margin-bottom:8px">
+      <div><label>作業員</label><select id="rf_u"><option value="">全員</option>${fUsers.map(([id, n]) => `<option value="${esc(id)}" ${id === RF.user ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select></div>
+      <div><label>案件</label><select id="rf_s"><option value="">すべて</option>${fSites.map(([id, n]) => `<option value="${esc(id)}" ${id === RF.site ? 'selected' : ''}>${esc(n || '(削除された案件)')}</option>`).join('')}</select></div>
+      <div><label>区分</label><select id="rf_t"><option value="">すべて</option><option ${RF.type === '現場' ? 'selected' : ''}>現場</option><option ${RF.type === '加工' ? 'selected' : ''}>加工</option></select></div></div>
+      <p class="muted" style="margin:0 0 6px">${list.length}件 / 行の「編集」から日付・作業員・案件・時間・残業・弁当・内容・経費を直せます(削除も可)。</p>` : ''}
+    <div class="scroll"><table><tr>${canEd ? '<th></th>' : ''}<th>${t('th_date')}</th><th>${t('th_author')}</th><th>${t('th_type')}</th><th>${t('site')}</th><th>${t('th_time')}</th><th>${t('th_ot')}</th><th>${t('bento')}</th><th>${t('content')}</th><th class="n">${t('expense')}</th></tr>
+    ${list.map(r => `<tr>${canEd ? `<td><button class="btn out sm" data-re="${esc(r.id)}">編集</button></td>` : ''}<td>${esc(r.date)}</td><td>${esc(r.name)}${r.submittedBy ? `<br><span class="muted" style="font-size:11px">${esc(t('proxyBy', { n: r.submittedBy }))}</span>` : ''}${r.editedBy ? `<br><span style="font-size:11px;color:#b45309">修正:${esc(r.editedBy)} ${esc((r.editedAt || '').slice(5))}</span>` : ''}</td><td><span class="pill ${r.workType === '加工' ? 'blue' : ''}">${esc(t('wt_' + (r.workType || '現場')))}</span></td><td>${esc(r.siteName)}</td><td>${esc(r.start)}-${esc(r.end)}</td><td>${r.otHours ? t('otNormal') + ' ' + esc(r.otHours) + 'h' : ''}${r.otHours && r.nightHours ? '<br>' : ''}${r.nightHours ? t('otNight') + ' ' + esc(r.nightHours) + 'h' : ''}</td><td style="text-align:center">${esc(r.bento || '')}</td><td style="white-space:normal;min-width:180px">${esc(r.content)}</td><td class="n">${r.expenseAmount ? esc(t('ex_' + r.expenseType)) + ' ' + yen(r.expenseAmount) : ''}</td></tr>`).join('') || `<tr><td colspan="${canEd ? 10 : 9}" class="muted">${t('none')}</td></tr>`}
     </table></div></div>`;
   document.querySelectorAll('[data-wt]').forEach(b => b.onclick = () => document.querySelectorAll('[data-wt]').forEach(x => x.classList.toggle('on', x === b)));
   document.querySelectorAll('[data-bt]').forEach(b => b.onclick = () => document.querySelectorAll('[data-bt]').forEach(x => x.classList.toggle('on', x === b)));
   $('#r_m').onchange = e => { S.repMonth = e.target.value; viewReport(); };
+  if (canEd) {
+    $('#rf_u').onchange = e => { RF.user = e.target.value; viewReport(); };
+    $('#rf_s').onchange = e => { RF.site = e.target.value; viewReport(); };
+    $('#rf_t').onchange = e => { RF.type = e.target.value; viewReport(); };
+    document.querySelectorAll('[data-re]').forEach(b => b.onclick = () => reportEdit(all.find(r => r.id === b.dataset.re)));
+  }
   // 代理提出:選んだ現場の「今日の予定」の担当者を自動でチェック
   const preset = () => {
     if (!$('#r_workers')) return;
@@ -607,6 +624,37 @@ async function viewReport() {
     toast(t('submitted', { n: r.count, t: t('wt_' + document.querySelector('[data-wt].on').dataset.wt) }) + (r.skipped.length ? t('skipped', { s: r.skipped.join(', ') }) : ''));
     viewReport();
   });
+}
+
+// 日報の修正(管理者・事務)
+function reportEdit(r) {
+  const H = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8, 9, 10, 11, 12];
+  const hopt = v => H.map(h => `<option value="${h}" ${Number(v || 0) === h ? 'selected' : ''}>${h ? h + '時間' : 'なし'}</option>`).join('');
+  const members = S.members.some(u => u.userId === r.userId) ? S.members : [{ userId: r.userId, name: r.name }].concat(S.members);
+  const XT = ['駐車場代', '高速代', 'ガソリン代', '材料費', 'その他'];
+  modal(`<h2>日報を修正</h2>
+    <p class="muted" style="margin-top:0">提出:${esc(r.createdAt || '')}${r.submittedBy ? '(' + esc(r.submittedBy) + 'が代理提出)' : ''}${r.editedBy ? ` / 最終修正:${esc(r.editedBy)} ${esc(r.editedAt)}` : ''}</p>
+    <div class="row"><div><label>日付</label><input type="date" id="e_date" value="${esc(r.date)}"></div>
+      <div><label>作業員</label><select id="e_user">${members.map(u => `<option value="${esc(u.userId)}" ${u.userId === r.userId ? 'selected' : ''}>${esc(u.name)}</option>`).join('')}</select></div></div>
+    <div class="row"><div><label>区分</label><select id="e_type"><option ${r.workType !== '加工' ? 'selected' : ''}>現場</option><option ${r.workType === '加工' ? 'selected' : ''}>加工</option></select></div>
+      <div><label>案件</label><select id="e_site">${siteOptions(r.siteId, true)}</select></div></div>
+    <div class="row"><div><label>入場</label><input type="time" id="e_s" value="${esc(r.start)}"></div><div><label>退場</label><input type="time" id="e_e" value="${esc(r.end)}"></div></div>
+    <div class="row"><div><label>通常残業</label><select id="e_ot">${hopt(r.otHours)}</select></div><div><label>深夜残業</label><select id="e_nt">${hopt(r.nightHours)}</select></div>
+      <div><label>弁当</label><select id="e_bt"><option value="✕" ${r.bento !== '○' ? 'selected' : ''}>✕ なし</option><option value="○" ${r.bento === '○' ? 'selected' : ''}>○ あり</option></select></div></div>
+    <label>作業内容</label><textarea id="e_c">${esc(r.content)}</textarea>
+    <div class="row"><div><label>経費</label><select id="e_xt"><option value="">なし</option>${XT.map(x => `<option ${x === r.expenseType ? 'selected' : ''}>${x}</option>`).join('')}</select></div>
+      <div><label>金額(円)</label><input type="number" id="e_xa" value="${esc(r.expenseAmount || '')}" inputmode="numeric"></div></div>
+    <p class="muted">修正した内容は、給料計算・出勤簿・集計・原価にすぐ反映されます。</p>
+    <div class="row" style="margin-top:10px;flex-wrap:wrap"><button class="btn" id="e_save">保存</button><button class="btn out" onclick="closeModal()">キャンセル</button><button class="btn" id="e_del" style="background:var(--red);flex:0 0 auto">削除</button></div>`, true);
+  if (!$('#e_site').value && r.siteId) $('#e_site').insertAdjacentHTML('afterbegin', `<option value="${esc(r.siteId)}" selected>${esc(r.siteName || '(削除された案件)')}</option>`);
+  $('#e_save').onclick = () => run(async () => {
+    const xt = $('#e_xt').value, xa = $('#e_xa').value;
+    await api('updateReport', { id: r.id, date: $('#e_date').value, userId: $('#e_user').value, workType: $('#e_type').value, siteId: $('#e_site').value,
+      start: $('#e_s').value, end: $('#e_e').value, otHours: $('#e_ot').value, nightHours: $('#e_nt').value, bento: $('#e_bt').value,
+      content: $('#e_c').value, expenseType: xt, expenseAmount: xt ? xa : '' });
+    closeModal(); toast('日報を修正しました'); viewReport();
+  });
+  $('#e_del').onclick = () => { if (confirm(r.date + ' ' + r.name + ' さんの日報を削除しますか?(元に戻せません)')) run(async () => { await api('deleteReport', { id: r.id }); closeModal(); toast('削除しました'); viewReport(); }); };
 }
 
 // ---------- 自分の記録 ----------
