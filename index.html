@@ -1273,7 +1273,7 @@ async function costDetail(r, C) {
 async function docList(type) {
   const isE = type === 'estimates', L = isE ? '見積' : '請求';
   const list = await run(() => api('docs', { type })) || [];
-  $('#mview').innerHTML = `<div class="card"><div class="calhead"><h2 style="margin:0">${L}書</h2><span style="display:flex;gap:6px">${isE ? '' : '<button class="btn out sm" id="sealBtn">角印を登録</button>'}<button class="btn sm" id="dnew">+ ${L}書を作成</button></span></div>
+  $('#mview').innerHTML = `<div class="card"><div class="calhead"><h2 style="margin:0">${L}書</h2><span style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn out sm" id="sealBtn">角印を登録</button>${isE ? '<button class="btn out sm" id="staffSealBtn">担当者印を登録</button>' : ''}<button class="btn sm" id="dnew">+ ${L}書を作成</button></span></div>
     <div class="scroll"><table><tr><th>番号</th><th>${isE ? '発行日' : '請求日'}</th><th>案件</th><th>件名</th><th class="n">合計(税込)</th><th>状態</th><th></th></tr>
     ${list.map((d, i) => `<tr><td>${esc(d.no)}</td><td>${esc(d.issueDate)}</td><td>${esc(d.siteName)}</td><td>${esc(d.title)}</td><td class="n">${num(d.total)}</td>
       <td><span class="pill ${['失注', '未送付', '作成中'].includes(d.status) ? 'tmp' : ''}">${esc(d.status)}</span>${d.paidDate ? '<br><span class="muted">入金 ' + esc(d.paidDate) + '</span>' : ''}</td>
@@ -1282,7 +1282,8 @@ async function docList(type) {
     </table></div>
     <p class="muted">${isE ? '状態を「受注」にすると、その金額が原価管理表の売上になります。「請求書へ」で同じ明細の請求書を作れます。' : '状態を「入金済」にすると入金日が記録され、原価管理表の入金済に入ります。'}</p></div>`;
   $('#dnew').onclick = () => docForm(type, {});
-  if ($('#sealBtn')) $('#sealBtn').onclick = async () => { if (S.seal == null) S.seal = (await run(() => api('seal')) || {}).data || ''; sealForm(); };
+  if ($('#sealBtn')) $('#sealBtn').onclick = async () => { if (S.seal == null) S.seal = (await run(() => api('seal')) || {}).data || ''; sealForm('company'); };
+  if ($('#staffSealBtn')) $('#staffSealBtn').onclick = async () => { if (S.staffSeal == null) S.staffSeal = (await run(() => api('seal', { kind: 'staff' })) || {}).data || ''; sealForm('staff'); };
   document.querySelectorAll('[data-ed]').forEach(b => b.onclick = () => docForm(type, list[b.dataset.ed]));
   document.querySelectorAll('[data-pr]').forEach(b => b.onclick = () => printDoc(type, list[b.dataset.pr]));
   document.querySelectorAll('[data-inv]').forEach(b => b.onclick = () => {
@@ -1307,7 +1308,12 @@ function docForm(type, d) {
     <div class="row"><div><label>${isE ? '発行日' : '請求日'}</label><input type="date" id="d_date" value="${esc(d.issueDate || ymd(new Date()))}"></div>
       <div><label>${isE ? '有効期限' : '支払期限'}</label><input type="date" id="d_lim" value="${esc(isE ? (d.validUntil || plus(Number(S.settings['見積の有効期間(日)']) || 30)) : (d.dueDate || eom()))}"></div>
       <div><label>税率(%)</label><input type="number" id="d_tax" value="${esc(d.taxRate || S.settings['消費税率(%)'] || 10)}"></div></div>
-    ${isE ? '' : `<label>入金日(「入金済」のとき。空欄なら今日)</label><input type="date" id="d_paid" value="${esc(d.paidDate || '')}">`}
+    ${isE ? `<h3>見積条件(見積書に印刷されます)</h3>
+      <div class="row"><div><label>納入・工事場所</label><input id="d_place" value="${esc(d.place || '')}" placeholder="空欄なら案件の住所"></div>
+        <div><label>完成日数(受注後○日間)</label><input id="d_period" value="${esc(d.period || '')}" placeholder="例:10"></div></div>
+      <div class="row"><div><label>御支払条件</label><input id="d_pay" value="${esc(d.id ? d.payTerms || '' : '貴社規定支払')}"></div>
+        <div><label>運賃</label><input id="d_frt" value="${esc(d.id ? d.freight || '' : '当方負担')}"></div>
+        <div><label>荷造費</label><input id="d_pack" value="${esc(d.id ? d.packing || '' : '当方負担')}"></div></div>` : `<label>入金日(「入金済」のとき。空欄なら今日)</label><input type="date" id="d_paid" value="${esc(d.paidDate || '')}">`}
     <h3>明細</h3><div class="scroll"><table class="items"><tr><th>品名・工事内容</th><th style="width:70px">数量</th><th style="width:60px">単位</th><th style="width:110px">単価(税抜)</th><th class="n" style="width:100px">金額</th><th></th></tr>
       <tbody id="d_items"></tbody></table></div>
     <button class="btn out sm" id="d_add">+ 行を追加</button>
@@ -1332,7 +1338,7 @@ function docForm(type, d) {
   recalc();
   $('#d_save').onclick = () => run(async () => {
     const p = { type, id: d.id, siteId: $('#d_site').value, status: $('#d_st').value, title: $('#d_title').value, issueDate: $('#d_date').value, taxRate: $('#d_tax').value, items: read(), note: $('#d_note').value };
-    if (isE) p.validUntil = $('#d_lim').value; else { p.dueDate = $('#d_lim').value; p.paidDate = $('#d_paid').value; }
+    if (isE) Object.assign(p, { validUntil: $('#d_lim').value, place: $('#d_place').value, period: $('#d_period').value, payTerms: $('#d_pay').value, freight: $('#d_frt').value, packing: $('#d_pack').value }); else { p.dueDate = $('#d_lim').value; p.paidDate = $('#d_paid').value; }
     const saved = await api('saveDoc', p); closeModal(); toast(`${saved.no} を保存しました`); viewMoney();
   });
   if ($('#d_del')) $('#d_del').onclick = () => { if (confirm('この書類を削除しますか?')) run(async () => { await api('deleteDoc', { type, id: d.id }); closeModal(); toast('削除しました'); viewMoney(); }); };
@@ -1341,6 +1347,7 @@ function docForm(type, d) {
 // 印刷(ブラウザの印刷 → 「PDFに保存」でPDFにもできる)
 function printDoc(type, d) {
   if (type === 'invoices') return printInvoice(d);
+  if (type === 'estimates') return printEstimate(d);
   const isE = type === 'estimates', c = S.settings || {}, R = 'style="text-align:right"';
   const rows = d.items.map(i => `<tr><td>${esc(i.name)}</td><td ${R}>${esc(i.qty)}</td><td style="text-align:center">${esc(i.unit)}</td><td ${R}>${num(i.price)}</td><td ${R}>${num(i.amount)}</td></tr>`).join('');
   const blank = '<tr><td>&nbsp;</td><td></td><td></td><td></td><td></td></tr>'.repeat(Math.max(0, 10 - d.items.length));
@@ -1356,6 +1363,100 @@ function printDoc(type, d) {
       <tr class="sum"><td colspan="4" ${R}>合計(税込)</td><td ${R}>${num(d.total)}</td></tr></table>
     <p>${isE ? `有効期限:${esc(d.validUntil || '')}` : `お支払期限:${esc(d.dueDate || '')}<br>お振込先:${esc(c['振込先'])}`}</p>
     ${d.note ? `<p>備考:<br>${esc(d.note).replace(/\n/g, '<br>')}</p>` : ''}</div>`;
+  $('#print').style.display = 'block';
+}
+
+// 見積書(会社の書式:御見積書・御照会文・合計・見積条件・責任者/担当者欄・名称・品名/仕様/寸法の明細)
+function wareki(ds) {
+  const p = String(ds || '').split('-').map(Number); if (p.length !== 3 || !p[0]) return '';
+  const y = p[0] - 2018;
+  return p[0] >= 2019 ? `令和${y === 1 ? '元' : y}年 ${p[1]}月 ${p[2]}日` : `${p[0]}年 ${p[1]}月 ${p[2]}日`;
+}
+async function printEstimate(d) {
+  const c = S.settings || {};
+  const [sl, ss] = await Promise.all([S.seal == null ? run(() => api('seal')) : null, S.staffSeal == null ? run(() => api('seal', { kind: 'staff' })) : null]);
+  if (S.seal == null) S.seal = (sl || {}).data || '';
+  if (S.staffSeal == null) S.staffSeal = (ss || {}).data || '';
+  const R = 'class="r"', items = d.items || [], ROWS = Math.max(15, items.length);
+  const money = v => (Number(v) ? num(v) : '');
+  const row = i => `<tr><td class="nm">${esc(i.name || '')}</td><td ${R}>${i.qty !== '' && i.qty != null && (i.name || i.price) ? esc(i.qty) : ''}</td><td class="u">${esc(i.unit || '')}</td><td ${R}>${i.unit === '式' && Number(i.qty) === 1 ? '' : money(i.price)}</td><td class="sp"></td><td ${R}>${money(i.amount)}</td></tr>`;
+  const blank = n => '<tr><td class="nm">&nbsp;</td><td></td><td></td><td></td><td class="sp"></td><td></td></tr>'.repeat(Math.max(0, n));
+  const place = d.place || d.address || '';
+  $('#print').innerHTML = `<style>
+    .est{width:186mm;margin:2mm auto;color:#000;font-family:"Yu Mincho","YuMincho","Hiragino Mincho ProN","Noto Serif JP","Noto Serif CJK JP","MS PMincho",serif;font-size:10pt}
+    .est .no{margin-left:auto;width:52mm;border-bottom:1px solid #000;display:flex;justify-content:space-between;padding:0 1mm .5mm;font-size:10.5pt}
+    .est .ttl{text-align:center;margin:1mm 0 0}.est .ttl span{font-size:20pt;letter-spacing:.35em;padding-left:.35em;border-bottom:1.2px solid #000;font-weight:400}
+    .est .dt{text-align:right;margin-top:2mm}.est .dt span{border-bottom:1px solid #000;padding:0 .5mm;font-size:10pt}
+    .est .mid{display:flex;justify-content:space-between;margin-top:1mm}
+    .est .lft{width:112mm}
+    .est .to{display:flex;align-items:flex-end;font-weight:700;font-size:11pt}
+    .est .to .nm{flex:1;text-align:right;border-bottom:1px solid #000;padding:0 3mm .5mm}.est .to .on{padding-left:2mm}
+    .est .inq{font-size:8.5pt;margin-top:3mm;word-spacing:0}.est .inq span{display:inline-block}
+    .est .gr{font-size:9pt;margin-top:2mm;line-height:1.45}
+    .est .co{width:62mm;position:relative;padding-top:6mm;font-size:8.5pt;line-height:1.45}
+    .est .co .cn{font-size:11.5pt;font-weight:700;margin-bottom:.5mm}
+    .est .co img{position:absolute;right:-2mm;top:-1.5mm;width:20mm;height:20mm;object-fit:contain}
+    .est .row2{display:flex;justify-content:space-between;align-items:flex-start;margin-top:4mm}
+    .est .tot{display:flex;align-items:flex-end;border-bottom:1.8px solid #000;width:112mm;padding:0 1mm .3mm;font-size:16pt}
+    .est .tot b{font-weight:400;font-size:20pt;margin-left:22mm}
+    .est .cond{width:112mm;font-size:9pt}
+    .est .cond div{border-bottom:1px dashed #000;height:4mm;line-height:4.2mm;white-space:nowrap;overflow:hidden;display:flex}
+    .est .cond .k{width:31mm;display:inline-block}
+    .est .stamp{border-collapse:collapse;width:64mm;margin-top:7mm}
+    .est .stamp th,.est .stamp td{border:1px solid #000;font-size:7.5pt;font-weight:400;text-align:center;padding:0}
+    .est .stamp th{height:4.2mm}.est .stamp td{height:19mm}
+    .est .stamp img{width:15mm;height:15mm;object-fit:contain;display:block;margin:0 1mm 0 auto;opacity:.85}
+    .est .name{display:flex;align-items:flex-end;border-bottom:1px solid #000;margin:3mm 0 0 18mm;padding:0 0 .5mm}
+    .est .name .k{font-size:13pt;margin-right:10mm}.est .name .v{font-size:11pt}
+    .est table.it{width:100%;border-collapse:collapse;margin-top:3.5mm;border:1.6px solid #000}
+    .est .it th,.est .it td{border:1px solid #000;height:7.2mm;padding:0 1.2mm;font-size:9pt;font-weight:400}
+    .est .it th{height:4.6mm;font-size:8.5pt;text-align:center;background:#fff;color:#000}
+    .est .it td.r{text-align:right;font-size:10pt}.est .it td.u{font-size:8.5pt}.est .it td.sp{padding:0}
+    .est .it td.nm{font-size:8.8pt}
+    .est .note{margin-top:2.5mm;font-size:8.5pt;line-height:1.5}
+    @page{size:A4;margin:7mm}
+  </style>
+  <div class="bar"><button class="btn" onclick="window.print()">印刷 / PDF保存</button><button class="btn out" onclick="document.getElementById('print').style.display='none'">閉じる</button></div>
+  <div class="est">
+    <div class="no"><span>No.</span><span>${esc(d.no)}</span></div>
+    <h1 class="ttl"><span>御見積書</span></h1>
+    <div class="dt"><span>${wareki(d.issueDate)}</span></div>
+    <div class="mid">
+      <div class="lft">
+        <div class="to"><span class="nm">${esc(d.client || d.siteName)}</span><span class="on">御中</span></div>
+        <div class="inq"><span style="width:16mm">貴</span><span style="width:16mm">月</span><span style="width:26mm">日付第</span><span>号御照会に対し</span></div>
+        <div class="gr">下記のとおり御見積り申し上げます。<br>何卒御用命下さいますよう御願い申し上げます。</div>
+      </div>
+      <div class="co">${S.seal ? `<img src="${S.seal}" alt="">` : ''}
+        <div class="cn">${esc(c['会社名'])}</div>
+        <div>${esc([c['郵便番号'], c['住所']].filter(Boolean).join('　'))}</div>
+        <div>TEL　　${esc(c['電話番号'])}</div>${c['FAX'] ? `<div style="margin-top:1.5mm">FAX　　${esc(c['FAX'])}</div>` : ''}
+      </div>
+    </div>
+    <div class="row2">
+      <div>
+        <div class="tot"><span>合計</span><b>¥${num(d.total)}</b></div>
+        <div class="cond">
+          <div><span class="k">納入･完成･月日:受注後</span><span style="width:24mm;text-align:center">${esc(d.period || '')}</span><span>日間</span></div>
+          <div><span class="k">納入･工事･場所:</span><span>${esc(place)}</span></div>
+          <div><span class="k">運　　　　　賃:</span><span style="width:38mm">${esc(d.freight || '')}</span><span>荷 造 費:${esc(d.packing || '')}</span></div>
+          <div><span class="k">御 支 払 条 件:</span><span>${esc(d.payTerms || '')}</span></div>
+          <div><span class="k">消　　費　　税:</span><span>上記価格は消費税込価格です。</span></div>
+        </div>
+      </div>
+      <table class="stamp"><tr><th style="width:50%">責任者</th><th>担 当 者</th></tr>
+        <tr><td></td><td>${S.staffSeal ? `<img src="${S.staffSeal}" alt="">` : ''}</td></tr></table>
+    </div>
+    <div class="name"><span class="k">名称</span><span class="v">${esc(d.title)}</span></div>
+    <table class="it">
+      <tr><th style="width:56%">品名・仕様・寸法</th><th style="width:6.5%">数量</th><th style="width:6%">単位</th><th style="width:12%">単価</th><th style="width:3.5%"></th><th style="width:16%">金　　　額</th></tr>
+      ${items.map(row).join('')}${blank(ROWS - items.length)}
+      <tr class="s"><td></td><td colspan="1" style="text-align:center">小計</td><td></td><td></td><td class="sp"></td><td ${R}>${num(d.subtotal)}</td></tr>
+      <tr class="s"><td></td><td></td><td></td><td style="font-size:7.5pt">消費税${esc(d.taxRate)}％</td><td class="sp"></td><td ${R}>${num(d.tax)}</td></tr>
+      <tr class="s"><td style="text-align:center">合計</td><td></td><td></td><td></td><td class="sp"></td><td ${R}>${num(d.total)}</td></tr>
+    </table>
+    ${d.validUntil || d.note ? `<div class="note">${d.validUntil ? `見積有効期限:${wareki(d.validUntil)}<br>` : ''}${d.note ? '備考:' + esc(d.note).replace(/\n/g, '<br>') : ''}</div>` : ''}
+  </div>`;
   $('#print').style.display = 'block';
 }
 
@@ -1424,12 +1525,13 @@ async function printInvoice(d) {
 }
 
 // 角印の登録(請求書の会社名の横に印刷)
-function sealForm() {
-  modal(`<h2>角印の画像を登録</h2>
-    <p class="muted">請求書の会社名の右側に印刷されます。背景が透明か白の画像(PNG・JPEG)を選んでください。画像はスプレッドシートに保存され、外部には公開されません。</p>
-    ${S.seal ? `<p>現在の角印:<br><img src="${S.seal}" style="width:90px;height:90px;object-fit:contain;border:1px solid #ddd;border-radius:8px"></p>` : '<p class="muted">まだ登録されていません。</p>'}
+function sealForm(kind) {
+  const st = kind === 'staff', K = st ? 'staffSeal' : 'seal', NM = st ? '担当者印' : '角印', cur = S[K];
+  modal(`<h2>${NM}の画像を登録</h2>
+    <p class="muted">${st ? '見積書の右上の「担当者」欄に印刷されます。' : '見積書・請求書の会社名の右側に印刷されます。'}背景が透明か白の画像(PNG・JPEG)を選んでください。画像はスプレッドシートに保存され、外部には公開されません。</p>
+    ${cur ? `<p>現在の${NM}:<br><img src="${cur}" style="width:90px;height:90px;object-fit:contain;border:1px solid #ddd;border-radius:8px"></p>` : '<p class="muted">まだ登録されていません。</p>'}
     <input type="file" id="sealFile" accept="image/png,image/jpeg">
-    <div class="row" style="margin-top:14px"><button class="btn" id="sealSave">登録する</button>${S.seal ? '<button class="btn red" id="sealDel">削除</button>' : ''}<button class="btn out" onclick="closeModal()">閉じる</button></div>`);
+    <div class="row" style="margin-top:14px"><button class="btn" id="sealSave">登録する</button>${cur ? '<button class="btn red" id="sealDel">削除</button>' : ''}<button class="btn out" onclick="closeModal()">閉じる</button></div>`);
   $('#sealSave').onclick = () => run(async () => {
     const f = $('#sealFile').files[0]; if (!f) throw new Error('画像を選んでください');
     const img = await new Promise((ok, ng) => { const i = new Image(); i.onload = () => ok(i); i.onerror = ng; i.src = URL.createObjectURL(f); });
@@ -1438,9 +1540,9 @@ function sealForm() {
     cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
     let data = cv.toDataURL('image/png');
     if (data.length > 300000) { const c2 = document.createElement('canvas'); c2.width = cv.width; c2.height = cv.height; const x = c2.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c2.width, c2.height); x.drawImage(cv, 0, 0); data = c2.toDataURL('image/jpeg', 0.9); }
-    await api('saveSeal', { data }); S.seal = data; closeModal(); toast('角印を登録しました');
+    await api('saveSeal', { data, kind }); S[K] = data; closeModal(); toast(NM + 'を登録しました');
   });
-  if ($('#sealDel')) $('#sealDel').onclick = () => { if (confirm('角印を削除しますか?')) run(async () => { await api('saveSeal', { data: '' }); S.seal = ''; closeModal(); toast('削除しました'); }); };
+  if ($('#sealDel')) $('#sealDel').onclick = () => { if (confirm(NM + 'を削除しますか?')) run(async () => { await api('saveSeal', { data: '', kind }); S[K] = ''; closeModal(); toast('削除しました'); }); };
 }
 
 // 原価入力(材料費・外注費など)
