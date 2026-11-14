@@ -863,11 +863,11 @@ function rosterModel(r) {
   if (F.site || F.client) users = users.filter(u => E.some(e => e.uid === u.userId));
   const [y, m] = r.month.split('-').map(Number);
   const days = Array.from({ length: r.days }, (_, i) => { const d = new Date(y, m - 1, i + 1); return { ds: ymd(d), n: i + 1, w: d.getDay() }; });
-  return { F, E, cell, users, days, filtered: !!(F.site || F.client) };
+  return { F, E, cell, users, days, coOk, filtered: !!(F.site || F.client) };
 }
 
 function renderRoster(r) {
-  const { F, E, cell, users, days, filtered } = rosterModel(r);
+  const { F, E, cell, users, days, coOk, filtered } = rosterModel(r);
   const W = '日月火水木金土', sm = r.sites;
   const clients = [...new Set(Object.values(sm).map(s => s.client).filter(Boolean))].sort();
   const siteIds = Object.keys(sm).filter(id => !F.client || sm[id].client === F.client).sort((a, b) => (sm[a].name < sm[b].name ? -1 : 1));
