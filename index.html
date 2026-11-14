@@ -119,6 +119,7 @@
     .paper{margin:0 auto}
     @page{size:A4;margin:12mm}
   }
+  .linkbtn{border:0;background:none;color:var(--red);font-size:12px;padding:4px 0 0;cursor:pointer;text-decoration:underline}
   tr.cogrp td{background:var(--g2);font-weight:700;color:var(--g);padding:6px 10px}
   .samebox{display:flex;gap:12px;align-items:center;justify-content:space-between;background:#fff7e6;border:2px solid #f59e0b;border-radius:10px;padding:12px;margin:0 0 10px}
   .samebox .btn{flex:0 0 auto;background:#d97706}
@@ -919,7 +920,7 @@ async function viewAdmin() {
       <p class="muted">LINEから登録した人は「承認待ち」です。権限を選ぶと即反映されます。LINEを使わない人は「+ 作業員を追加」で名前だけ登録できます(予定の担当・代理の日報・給料計算・出勤簿に出ます)。</p>
       <div class="row" style="flex-wrap:wrap;align-items:flex-end;margin-bottom:6px"><div style="flex:0 1 260px"><label>所属会社で表示</label><select id="uf_co"><option value="">すべての会社</option>${comps.map(c => `<option ${c.name === UF ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}<option value="__none" ${UF === '__none' ? 'selected' : ''}>(未設定)</option></select></div></div>
       <div class="scroll"><table><tr><th>氏名</th><th>所属会社</th><th>LINE</th><th>権限</th><th>日当(円)</th><th>給料らくだ社員コード</th><th>登録日時</th></tr>
-      ${shown.map(u => `${groupRow(u)}<tr><td><input data-n="${esc(u.userId)}" value="${esc(u.name)}" style="width:130px">${u.userId === S.me.userId ? '<span class="muted">(自分)</span>' : ''}</td>
+      ${shown.map(u => `${groupRow(u)}<tr><td><input data-n="${esc(u.userId)}" value="${esc(u.name)}" style="width:130px">${u.userId === S.me.userId ? '<span class="muted">(自分)</span>' : (!S.me.can.admin && u.role === 'admin') ? '' : `<br><button class="linkbtn" data-del="${esc(u.userId)}">この人を削除</button>`}</td>
         <td>${coSel(u.company, `data-co="${esc(u.userId)}"`)}</td>
         <td>${sameName[u.userId] ? `<span style="color:#b45309;font-weight:700;white-space:nowrap">同名の手動登録あり</span><br><button class="btn sm" style="background:#d97706" data-same="${esc(u.userId)}">紐付ける</button>` : u.line ? '<span class="muted">連携済</span>' : `<span style="color:#b45309">未連携</span><br><button class="btn out sm" data-lk="${esc(u.userId)}">LINEと紐付け</button>`}</td><td><select data-u="${esc(u.userId)}" style="width:auto" ${!S.me.can.admin && u.role === 'admin' ? 'disabled' : ''}>${Object.keys(ROLE).filter(k => S.me.can.admin || k !== 'admin' || u.role === 'admin').map(k => `<option value="${k}" ${k === u.role ? 'selected' : ''}>${ROLE[k]}</option>`).join('')}</select></td>
         <td><input type="number" data-w="${esc(u.userId)}" value="${esc(u.dailyWage || '')}" placeholder="例:18000" style="width:110px${coPrice[u.company] ? ';color:#9aa5a0;text-decoration:line-through' : ''}">${coPrice[u.company] ? `<br><span style="font-size:11px;color:var(--g);font-weight:700">会社単価 ${num(coPrice[u.company])}円 を適用</span>` : ''}</td><td><input data-ec="${esc(u.userId)}" value="${esc(u.empCode || '')}" placeholder="例:8" style="width:90px"></td><td>${esc(u.createdAt)}</td></tr>`).join('')}
@@ -993,6 +994,27 @@ async function viewAdmin() {
         <div class="row" style="margin-top:14px"><button class="btn" id="cod_ok" style="background:var(--red)">削除する</button><button class="btn out" onclick="closeModal()">キャンセル</button></div>`);
       $('#cod_ok').onclick = () => run(async () => { await api('saveCompany', { oldName: c.name, remove: true }); if (S.userCo === c.name) S.userCo = ''; closeModal(); toast('削除しました'); viewAdmin(); });
     });
+    document.querySelectorAll('[data-del]').forEach(b => b.onclick = () => run(async () => {
+      const u = users.find(x => x.userId === b.dataset.del);
+      const rc = await api('userRecords', { userId: u.userId });
+      const has = rc.attendance + rc.reports + rc.advances > 0;
+      const done = list => { S.members = list.filter(x => ['admin', 'office', 'foreman', 'worker'].indexOf(x.role) >= 0).map(x => ({ userId: x.userId, name: x.name })); closeModal(); viewAdmin(); };
+      modal(`<h2>「${esc(u.name)}」を削除</h2>
+        ${has ? `<p>この人には次の記録があります。</p>
+          <table><tr><td>打刻</td><td class="n">${rc.attendance}件</td></tr><tr><td>日報</td><td class="n">${rc.reports}件</td></tr><tr><td>前払い</td><td class="n">${rc.advances}件</td></tr><tr><td>担当している予定</td><td class="n">${rc.schedules}件</td></tr></table>
+          <p class="muted" style="margin-top:10px"><b>辞めた人は「停止にする」がおすすめです。</b>ログインできなくなり、予定の担当や代理の日報の候補からも外れますが、過去の給料計算・出勤簿・原価(労務費)の記録はそのまま残ります。</p>
+          <p class="muted">「記録ごと削除」すると、この人の打刻・日報・前払いもすべて消え、過去の月の給料計算・出勤簿・原価の数字も変わります。元に戻せません。</p>
+          <div class="row" style="margin-top:14px;flex-wrap:wrap"><button class="btn" id="del_stop">停止にする</button><button class="btn" id="del_all" style="background:var(--red)">記録ごと削除</button><button class="btn out" onclick="closeModal()">キャンセル</button></div>`
+        : `<p>打刻・日報・前払いの記録はありません。一覧から削除します${rc.schedules ? `(担当している予定${rc.schedules}件からも外れます。予定自体は残ります)` : ''}。</p>
+          ${u.line ? '<p class="muted">LINEで登録している人なので、本人がもう一度アプリを開くと「承認待ち」として申請し直せます。</p>' : ''}
+          <div class="row" style="margin-top:14px"><button class="btn" id="del_one" style="background:var(--red)">削除する</button><button class="btn out" onclick="closeModal()">キャンセル</button></div>`}`);
+      if ($('#del_one')) $('#del_one').onclick = () => run(async () => { done(await api('deleteUser', { userId: u.userId })); toast('削除しました'); });
+      if ($('#del_stop')) $('#del_stop').onclick = () => run(async () => { await api('setUser', { userId: u.userId, role: 'disabled' }); S.members = S.members.filter(x => x.userId !== u.userId); closeModal(); toast('停止にしました'); viewAdmin(); });
+      if ($('#del_all')) $('#del_all').onclick = () => {
+        if (!confirm('「' + u.name + '」の打刻・日報・前払いの記録もすべて削除します。元に戻せません。よろしいですか?')) return;
+        run(async () => { done(await api('deleteUser', { userId: u.userId, withRecords: true })); toast('記録ごと削除しました'); });
+      };
+    }));
     document.querySelectorAll('[data-n]').forEach(inp => inp.onchange = () => run(async () => {
       if (!inp.value.trim()) { toast('氏名を入力してください'); return; }
       await api('setUser', { userId: inp.dataset.n, name: inp.value });
