@@ -120,6 +120,8 @@
     @page{size:A4;margin:12mm}
   }
   .linkbtn{border:0;background:none;color:var(--red);font-size:12px;padding:4px 0 0;cursor:pointer;text-decoration:underline}
+  .brow{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid var(--line)}
+  .brow .seg button{padding:6px 12px;font-size:13px}
   tr.cogrp td{background:var(--g2);font-weight:700;color:var(--g);padding:6px 10px}
   .samebox{display:flex;gap:12px;align-items:center;justify-content:space-between;background:#fff7e6;border:2px solid #f59e0b;border-radius:10px;padding:12px;margin:0 0 10px}
   .samebox .btn{flex:0 0 auto;background:#d97706}
@@ -234,6 +236,10 @@ var D = {
   contentPh: ['例:2F内装解体、産廃搬出2t車1台', 'e.g. 2F interior demolition, 1 truck of waste', 'Ví dụ: Tháo dỡ nội thất tầng 2, chở 1 xe rác', 'Contoh: Bongkar interior lt. 2, angkut 1 truk limbah', 'Hal.: Demolisyon sa 2F, 1 trak ng basura'],
   bento: ['弁当', 'Lunch box (bento)', 'Cơm hộp (bento)', 'Nasi kotak (bento)', 'Baon (bento)'],
   bentoYes: ['○ あり', '○ Yes', '○ Có', '○ Ya', '○ Oo'],
+  bentoEach: ['弁当(一人ずつ)', 'Lunch box (each person)', 'Cơm hộp (từng người)', 'Bekal (per orang)', 'Baon (bawat isa)'],
+  bentoEachNote: ['選んだ作業員ごとに ○/✕ を選びます(選ばない人は ✕)。上の「弁当」は自分の分です。', 'Choose ○/✕ for each selected worker (✕ if not chosen). The "Lunch box" above is for yourself.', 'Chọn ○/✕ cho từng người (không chọn = ✕). "Cơm hộp" phía trên là của bạn.', 'Pilih ○/✕ untuk tiap pekerja (tidak dipilih = ✕). "Bekal" di atas untuk Anda sendiri.', 'Piliin ang ○/✕ para sa bawat isa (✕ kung hindi pinili). Ang "Baon" sa itaas ay para sa iyo.'],
+  bentoAllYes: ['全員 ○', 'All ○', 'Tất cả ○', 'Semua ○', 'Lahat ○'],
+  bentoAllNo: ['全員 ✕', 'All ✕', 'Tất cả ✕', 'Semua ✕', 'Lahat ✕'],
   bentoNo: ['✕ なし', '✕ No', '✕ Không', '✕ Tidak', '✕ Hindi'],
   expense: ['経費', 'Expenses', 'Chi phí', 'Biaya', 'Gastos'],
   ex_なし: ['なし', 'None', 'Không có', 'Tidak ada', 'Wala'],
@@ -632,6 +638,9 @@ async function viewReport() {
       <div class="chips" id="r_workers">${S.members.filter(u => u.userId !== S.me.userId).map(u => `<label><input type="checkbox" value="${esc(u.userId)}">${esc(u.name)}</label>`).join('') || `<span class="muted">${t('noOthers')}</span>`}</div>
       <div class="row" style="margin-top:6px"><button class="btn out sm" id="r_all" type="button">${t('selAll')}</button><button class="btn out sm" id="r_none" type="button">${t('selNone')}</button></div>
       <div class="chips" style="margin-top:8px"><label><input type="checkbox" id="r_self" checked>${t('selfToo')}</label></div>
+      <div id="r_bwrap" style="display:none;margin-top:12px"><div class="calhead" style="margin:0"><label style="margin:0">${t('bentoEach')}</label>
+        <span style="display:flex;gap:6px"><button type="button" class="btn out sm" id="rb_all">${t('bentoAllYes')}</button><button type="button" class="btn out sm" id="rb_none">${t('bentoAllNo')}</button></span></div>
+        <p class="muted" style="margin:4px 0 6px;font-size:12px">${t('bentoEachNote')}</p><div id="r_blist"></div></div>
       <p class="muted">${t('proxyNote')}</p>` : ''}
     <button class="btn big" id="r_save">${t('submit')}</button></div>
     <div class="card"><div class="calhead"><h2 style="margin:0">${S.me.can.viewAll ? t('repList') : t('myReps')}</h2><input type="month" id="r_m" value="${month}" style="width:auto"></div>
@@ -657,16 +666,31 @@ async function viewReport() {
     if (!$('#r_workers')) return;
     const ids = []; today.schedules.filter(s => s.siteId === $('#r_site').value).forEach(s => (s.assignees || []).forEach(id => ids.push(id)));
     document.querySelectorAll('#r_workers input').forEach(c => { c.checked = ids.indexOf(c.value) >= 0; });
+    drawBento();
   };
+  // 代理提出の弁当(一人ずつ ○/✕。初期値は ✕)
+  const bmap = {};
+  function drawBento() {
+    if (!$('#r_blist')) return;
+    const sel = [...document.querySelectorAll('#r_workers input:checked')];
+    $('#r_bwrap').style.display = sel.length ? 'block' : 'none';
+    $('#r_blist').innerHTML = sel.map(c => { const v = bmap[c.value] || '✕', nm = c.parentNode.textContent.trim();
+      return `<div class="brow"><span>${esc(nm)}</span><div class="seg" style="margin:0"><button type="button" data-bu="${esc(c.value)}" data-bv="○" class="${v === '○' ? 'on' : ''}">${t('bentoYes')}</button><button type="button" data-bu="${esc(c.value)}" data-bv="✕" class="${v === '✕' ? 'on' : ''}">${t('bentoNo')}</button></div></div>`; }).join('');
+    document.querySelectorAll('[data-bu]').forEach(b => b.onclick = () => { bmap[b.dataset.bu] = b.dataset.bv; drawBento(); });
+  }
   if ($('#r_workers')) {
+    document.querySelectorAll('#r_workers input').forEach(c => c.addEventListener('change', drawBento));
+    $('#rb_all').onclick = () => { document.querySelectorAll('#r_workers input:checked').forEach(c => { bmap[c.value] = '○'; }); drawBento(); };
+    $('#rb_none').onclick = () => { document.querySelectorAll('#r_workers input:checked').forEach(c => { bmap[c.value] = '✕'; }); drawBento(); };
     $('#r_site').onchange = preset; preset();
-    $('#r_all').onclick = () => document.querySelectorAll('#r_workers input').forEach(c => { c.checked = true; });
-    $('#r_none').onclick = () => document.querySelectorAll('#r_workers input').forEach(c => { c.checked = false; });
+    $('#r_all').onclick = () => { document.querySelectorAll('#r_workers input').forEach(c => { c.checked = true; }); drawBento(); };
+    $('#r_none').onclick = () => { document.querySelectorAll('#r_workers input').forEach(c => { c.checked = false; }); drawBento(); };
   }
   $('#r_save').onclick = () => run(async () => {
     const workerIds = [...document.querySelectorAll('#r_workers input:checked')].map(c => c.value);
     const r = await api('submitReport', { date: $('#r_date').value, siteId: $('#r_site').value, start: $('#r_s').value, end: $('#r_e').value, content: $('#r_c').value, expenseType: $('#r_xt').value, expenseAmount: $('#r_xa').value,
-      workerIds, includeSelf: $('#r_self') ? $('#r_self').checked : true, workType: document.querySelector('[data-wt].on').dataset.wt, otHours: $('#r_ot').value, nightHours: $('#r_nt').value, bento: document.querySelector('[data-bt].on').dataset.bt });
+      workerIds, includeSelf: $('#r_self') ? $('#r_self').checked : true, workType: document.querySelector('[data-wt].on').dataset.wt, otHours: $('#r_ot').value, nightHours: $('#r_nt').value, bento: document.querySelector('[data-bt].on').dataset.bt,
+      bentoMap: workerIds.reduce((m, id) => { m[id] = bmap[id] === '○' ? '○' : '✕'; return m; }, {}) });
     toast(t('submitted', { n: r.count, t: t('wt_' + document.querySelector('[data-wt].on').dataset.wt) }) + (r.skipped.length ? t('skipped', { s: r.skipped.join(', ') }) : ''));
     viewReport();
   });
@@ -719,7 +743,7 @@ async function viewMine() {
 // ---------- 集計(30秒ごと自動更新) ----------
 // 集計タブの切り替え(集計 / 出勤簿)
 const aggSeg = () => `<div class="seg">${[['summary', '集計'], ['roster', '出勤簿']].map(([k, l]) => `<button data-as="${k}" class="${(S.aggSub || 'summary') === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
-function bindAggSeg() { document.querySelectorAll('[data-as]').forEach(b => b.onclick = () => { S.aggSub = b.dataset.as; viewAgg(); }); }
+function bindAggSeg() { document.querySelectorAll('[data-as]').forEach(b => b.onclick = () => { S.aggSub = b.dataset.as; clearInterval(S.timer); viewAgg(); }); }
 
 async function viewAgg() {
   const month = S.aggMonth || ym(new Date());
@@ -729,7 +753,7 @@ async function viewAgg() {
     const M = S.me.can.money;
     const [a, cs, pr, pend0] = await Promise.all([run(() => api('aggregate', { month })),
       M ? run(() => api('costSummary', { includeDone: true })) : null, M ? run(() => api('payroll', { month })) : null, M ? run(() => api('advances', { status: '申請中' })) : null]);
-    if (!a || S.tab !== 'agg') return;
+    if (!a || S.tab !== 'agg' || S.aggSub === 'roster') return; // 途中で出勤簿に切り替えたときは上書きしない
     const pend = M ? pend0 || [] : [];
     const st = {}; (cs ? cs.rows : []).forEach(r => { st[r.siteId] = r; });
     S.pendAdv = pend;
@@ -805,6 +829,7 @@ async function viewAgg() {
     });
   };
   await load();
+  if (S.tab !== 'agg' || S.aggSub === 'roster') return; // 読み込み中に出勤簿へ切り替えた
   clearInterval(S.timer); S.timer = setInterval(load, 30000);
 }
 // 給料の日ごとの内訳
@@ -847,8 +872,10 @@ async function viewRoster(month) {
     const r = await run(() => api('roster', { month })); if (!r || S.tab !== 'agg' || S.aggSub !== 'roster') return;
     S.rosterData = r; renderRoster(r);
   };
+  clearInterval(S.timer);
   $('#view').innerHTML = aggSeg() + '<div class="card">読み込み中…</div>'; bindAggSeg();
   await load();
+  if (S.tab !== 'agg' || S.aggSub !== 'roster') return; // 読み込み中に集計へ戻した
   clearInterval(S.timer); S.timer = setInterval(load, 60000);
 }
 
