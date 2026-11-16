@@ -1340,7 +1340,7 @@ async function costDetail(r, C) {
 async function docList(type) {
   const isE = type === 'estimates', L = isE ? '見積' : '請求';
   const list = await run(() => api('docs', { type })) || [];
-  $('#mview').innerHTML = `<div class="card"><div class="calhead"><h2 style="margin:0">${L}書</h2><span style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn out sm" id="sealBtn">角印を登録</button>${isE ? '<button class="btn out sm" id="staffSealBtn">担当者印を登録</button>' : ''}<button class="btn sm" id="dnew">+ ${L}書を作成</button></span></div>
+  $('#mview').innerHTML = `<div class="card"><div class="calhead"><h2 style="margin:0">${L}書</h2><span style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn out sm" id="sealBtn">角印を登録</button>${isE ? '<button class="btn out sm" id="staffSealBtn">担当者印を登録</button><button class="btn out sm" id="xlsImp">Excelから読み込み</button><input type="file" id="xlsFile" accept=".xls,.xlsx,.xlsm" style="display:none">' : ''}<button class="btn sm" id="dnew">+ ${L}書を作成</button></span></div>
     <div class="scroll"><table><tr><th>番号</th><th>${isE ? '発行日' : '請求日'}</th><th>案件</th><th>件名</th><th class="n">合計(税込)</th><th>状態</th><th></th></tr>
     ${list.map((d, i) => `<tr><td>${esc(d.no)}</td><td>${esc(d.issueDate)}</td><td>${esc(d.siteName)}</td><td>${esc(d.title)}</td><td class="n">${num(d.total)}</td>
       <td><span class="pill ${['失注', '未送付', '作成中'].includes(d.status) ? 'tmp' : ''}">${esc(d.status)}</span>${d.paidDate ? '<br><span class="muted">入金 ' + esc(d.paidDate) + '</span>' : ''}</td>
@@ -1349,6 +1349,7 @@ async function docList(type) {
     </table></div>
     <p class="muted">${isE ? '状態を「受注」にすると、その金額が原価管理表の売上になります。「請求書へ」で同じ明細の請求書を作れます。' : '状態を「入金済」にすると入金日が記録され、原価管理表の入金済に入ります。'}</p></div>`;
   $('#dnew').onclick = () => docForm(type, {});
+  if ($('#xlsImp')) { $('#xlsImp').onclick = () => $('#xlsFile').click(); $('#xlsFile').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) importEstimateXls(f); }; }
   if ($('#sealBtn')) $('#sealBtn').onclick = async () => { if (S.seal == null) S.seal = (await run(() => api('seal')) || {}).data || ''; sealForm('company'); };
   if ($('#staffSealBtn')) $('#staffSealBtn').onclick = async () => { if (S.staffSeal == null) S.staffSeal = (await run(() => api('seal', { kind: 'staff' })) || {}).data || ''; sealForm('staff'); };
   document.querySelectorAll('[data-ed]').forEach(b => b.onclick = () => docForm(type, list[b.dataset.ed]));
@@ -1367,7 +1368,7 @@ function docForm(type, d) {
   const plus = n => { const x = new Date(); x.setDate(x.getDate() + n); return ymd(x); };
   const eom = () => { const x = new Date(); return ymd(new Date(x.getFullYear(), x.getMonth() + 2, 0)); };
   const items = d.items && d.items.length ? d.items : [{ name: '', qty: 1, unit: '式', price: '' }];
-  modal(`<h2>${d.id ? `${L}書を編集(${esc(d.no)})` : `${L}書を作成`}</h2>
+  modal(`<h2>${d.id ? `${L}書を編集(${esc(d.no)})` : `${L}書を作成`}</h2>${d.importNo ? `<p class="muted" style="margin-top:-6px">Excelから読み込みました(元のNo. ${esc(d.importNo)})。内容を確認して「保存」を押してください。</p>` : ''}
     <div class="row"><div><label>案件 *</label><select id="d_site"><option value="">選択してください</option>${siteOptions(d.siteId, true)}</select></div>
       <div><label>状態</label><select id="d_st">${ST.map(s => `<option ${s === (d.status || ST[0]) ? 'selected' : ''}>${s}</option>`).join('')}</select></div></div>
     <p class="muted">宛名は案件の「元請」(未入力なら案件名)になります。</p>
@@ -1442,7 +1443,7 @@ function docForm(type, d) {
   });
   if ($('#d_pg')) { $('#d_pg').oninput = () => { pShow(); pFill(); }; $('#d_site').addEventListener('change', pLoad); if (billType) pLoad(); }
   $('#d_save').onclick = () => run(async () => {
-    const p = { type, id: d.id, siteId: $('#d_site').value, status: $('#d_st').value, title: $('#d_title').value, issueDate: $('#d_date').value, taxRate: $('#d_tax').value, items: read(), note: $('#d_note').value };
+    const p = { type, id: d.id, no: d.id ? undefined : d.importNo, siteId: $('#d_site').value, status: $('#d_st').value, title: $('#d_title').value, issueDate: $('#d_date').value, taxRate: $('#d_tax').value, items: read(), note: $('#d_note').value };
     if (isE) Object.assign(p, { validUntil: $('#d_lim').value, place: $('#d_place').value, period: $('#d_period').value, payTerms: $('#d_pay').value, freight: $('#d_frt').value, packing: $('#d_pack').value }); else {
       p.dueDate = $('#d_lim').value; p.paidDate = $('#d_paid').value; p.billType = billType; p.progress = billType ? $('#d_pg').value : '';
       if (billType && !(Number(p.progress) > 0)) throw new Error('累計出来高(%)を入れてください');
@@ -1451,6 +1452,94 @@ function docForm(type, d) {
     const saved = await api('saveDoc', p); closeModal(); toast(`${saved.no} を保存しました`); viewMoney();
   });
   if ($('#d_del')) $('#d_del').onclick = () => { if (confirm('この書類を削除しますか?')) run(async () => { await api('deleteDoc', { type, id: d.id }); closeModal(); toast('削除しました'); viewMoney(); }); };
+}
+
+// ===== Excelの見積書を読み込む(会社の書式「御見積書」。項目名を探して読むので、行や列が多少ずれても読めます) =====
+function loadSheetJS() {
+  if (window.XLSX) return Promise.resolve();
+  return new Promise((ok, ng) => { const sc = document.createElement('script'); sc.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js'; sc.onload = ok; sc.onerror = () => ng(new Error('Excel読み込み用の部品を取得できませんでした(通信を確認してください)')); document.head.appendChild(sc); });
+}
+function parseEstimateSheet(ws) {
+  const A = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' });
+  const nz2 = v => String(v == null ? '' : v).replace(/[\s\u3000]/g, '');
+  const txt = v => String(v == null ? '' : v).replace(/^[\s\u3000]+|[\s\u3000]+$/g, '');
+  const find = (re, from) => { for (let r = from || 0; r < A.length; r++) for (let c = 0; c < (A[r] || []).length; c++) if (re.test(nz2(A[r][c]))) return [r, c]; return null; };
+  const nextVal = (pos, stop) => { if (!pos) return ''; const row = A[pos[0]]; for (let c = pos[1] + 1; c < row.length; c++) { const v = txt(row[c]); if (v !== '') { if (stop && stop.test(nz2(v))) return ''; return v; } } return ''; };
+  const ymdOf = v => {
+    if (v instanceof Date && !isNaN(v)) return ymd(v);
+    if (typeof v === 'number' && v > 30000 && v < 80000) { const d = new Date(Math.round((v - 25569) * 86400000)); return ymd(new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())); }
+    const m = /令和(\d+|元)年(\d+)月(\d+)日/.exec(nz2(v)); if (m) return ymd(new Date(2018 + (m[1] === '元' ? 1 : +m[1]), +m[2] - 1, +m[3]));
+    const m2 = /(\d{4})[\/年-](\d{1,2})[\/月-](\d{1,2})/.exec(nz2(v)); if (m2) return ymd(new Date(+m2[1], +m2[2] - 1, +m2[3]));
+    return '';
+  };
+  const o = { items: [] };
+  // No.
+  const pNo = find(/^No\.?$/i); o.importNo = pNo ? nextVal(pNo) : '';
+  // 日付(上の方の日付らしいセル)
+  for (let r = 0; r < Math.min(A.length, 8) && !o.issueDate; r++) for (const v of A[r] || []) { const d = ymdOf(v); if (d && !(typeof v === 'number' && String(v) === o.importNo)) { o.issueDate = d; break; } }
+  // 宛名(「御中」の左)
+  const pTo = find(/^御中$/);
+  if (pTo) { const row = A[pTo[0]]; for (let c = pTo[1] - 1; c >= 0; c--) { const v = txt(row[c]); if (v) { o.client = v; break; } } }
+  o.title = nextVal(find(/^名称/));
+  o.place = nextVal(find(/場所[:：]?$/));
+  const pPer = find(/受注後$/); o.period = pPer ? nextVal(pPer, /^日間$/) : '';
+  o.payTerms = nextVal(find(/支払条件[:：]?$/)).replace(/[\s\u3000]/g, '');
+  o.freight = nextVal(find(/^運賃[:：]?$/), /荷造費/).replace(/[\s\u3000]/g, '');
+  const pPk = find(/荷造費/);
+  if (pPk) { const v = nz2(A[pPk[0]][pPk[1]]); const m = /荷造費[:：](.+)$/.exec(v); o.packing = m ? m[1] : nextVal(pPk).replace(/[\s\u3000]/g, ''); }
+  // 消費税率
+  const pTax = find(/消費税\d+[%％]/); if (pTax) { const m = /消費税(\d+)/.exec(nz2(A[pTax[0]][pTax[1]])); if (m) o.taxRate = m[1]; }
+  // 明細:「品名」「数量」の見出し行の下から「小計」「合計」の行まで
+  let hr = -1;
+  for (let r = 0; r < A.length; r++) { const row = (A[r] || []).map(nz2); if (row.some(v => /品名|工事名称|内容/.test(v)) && row.some(v => v === '数量')) { hr = r; break; } }
+  if (hr < 0) throw new Error('明細の見出し(「品名」「数量」)が見つかりませんでした');
+  const H = A[hr].map(nz2), col = re => H.findIndex(v => re.test(v));
+  const cN = col(/品名|工事名称|内容/), cQ = col(/^数量$/), cU = col(/^単位$/), cP = col(/^単価$/), cA = col(/^金額$/);
+  for (let r = hr + 1; r < A.length; r++) {
+    const row = A[r] || [], all = row.map(nz2).join('');
+    if (/^(小計|合計)/.test(nz2(row[cN])) || row.some((v, c) => c !== cN && /^小計$/.test(nz2(v)))) break;
+    if (!all) continue;
+    const num0 = v => (typeof v === 'number' ? v : Number(String(v).replace(/[,，円¥￥\s]/g, '')) || 0);
+    const name = String(row[cN] == null ? '' : row[cN]).replace(/[\s\u3000]+$/, '').replace(/^ +/, ''), qty = row[cQ] === '' ? '' : num0(row[cQ]), unit = cU >= 0 ? txt(row[cU]) : '';
+    let price = cP >= 0 ? num0(row[cP]) : 0; const amount = cA >= 0 ? num0(row[cA]) : 0;
+    if (!price && amount) price = qty ? Math.round(amount / qty) : amount; // 金額だけの行(1式など)は単価=金額÷数量
+    if (!name && !price) continue;
+    o.items.push({ name: name, qty: qty === '' ? (price ? 1 : '') : qty, unit: unit, price: price || '' });
+  }
+  if (!o.items.length) throw new Error('明細の行が見つかりませんでした');
+  return o;
+}
+async function importEstimateXls(file) {
+  await run(async () => {
+    toast('Excelを読み込んでいます…');
+    await loadSheetJS();
+    const wb = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
+    const ws = wb.Sheets[wb.SheetNames.find(n => /見積/.test(n)) || wb.SheetNames[0]];
+    const o = parseEstimateSheet(ws);
+    // 案件を探す:元請の名前が同じ(空白・株式会社などの違いは無視)か、案件名が件名・場所と同じ
+    const key = v => String(v || '').replace(/[\s\u3000]/g, '').replace(/株式会社|有限会社|\(株\)|（株）|\(有\)|（有）/g, '');
+    const cands = (S.sites || []).filter(s => (o.client && key(s.client) === key(o.client)) || (o.title && key(s.name) === key(o.title)) || (o.place && key(s.name) === key(o.place)));
+    modal(`<h2>Excelの見積書を読み込み</h2>
+      <table><tr><td>見積No.</td><td>${esc(o.importNo || '—')}</td></tr><tr><td>日付</td><td>${esc(o.issueDate || '—')}</td></tr>
+        <tr><td>宛名</td><td>${esc(o.client || '—')}</td></tr><tr><td>名称</td><td>${esc(o.title || '—')}</td></tr>
+        <tr><td>工事場所</td><td>${esc(o.place || '—')}</td></tr><tr><td>明細</td><td>${o.items.length}行(金額のある行 ${o.items.filter(i => i.price).length}行)</td></tr></table>
+      <label>どの案件の見積にしますか?</label>
+      <select id="im_site">${cands.length ? '' : '<option value="">選択してください</option>'}${cands.map(s => `<option value="${esc(s.siteId)}">${esc(s.name)}(${esc(s.client || '')})</option>`).join('')}
+        ${cands.length ? '<option disabled>──────────</option>' : ''}${(S.sites || []).filter(s => cands.indexOf(s) < 0).map(s => `<option value="${esc(s.siteId)}">${esc(s.name)}(${esc(s.client || '')})</option>`).join('')}
+        <option value="__new">+ 新しい案件を作る(案件名:${esc(o.title || o.place || '')} / 元請:${esc(o.client || '')})</option></select>
+      <p class="muted">次の画面で内容を確認・修正してから保存します。金額だけの行(1式など)は「単価=金額」として読み込みます。</p>
+      <div class="row" style="margin-top:12px"><button class="btn" id="im_go">次へ</button><button class="btn out" onclick="closeModal()">キャンセル</button></div>`);
+    $('#im_go').onclick = () => run(async () => {
+      let siteId = $('#im_site').value;
+      if (!siteId) { toast('案件を選んでください'); return; }
+      if (siteId === '__new') {
+        const st = await api('saveSite', { name: o.title || o.place || '(Excel読み込み)', client: o.client || '', address: o.place || '', status: '見積中', contractType: '請負' });
+        S.sites = await api('sites'); siteId = st.siteId;
+      }
+      closeModal();
+      docForm('estimates', Object.assign({}, o, { siteId: siteId, status: '提出済', note: '' }));
+    });
+  });
 }
 
 // 印刷(ブラウザの印刷 → 「PDFに保存」でPDFにもできる)
