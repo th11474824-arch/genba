@@ -1231,19 +1231,34 @@ const matchFilter = (r, f) => !f || (f === '見積中' ? r.estStatus === f : r.b
 async function moneySummary() {
   // 表示期間:全期間/年/月
   const now = new Date(), PR = S.costPer || (S.costPer = { mode: 'all', year: String(now.getFullYear()), month: ym(now) });
-  const period = PR.mode === 'year' ? PR.year : PR.mode === 'month' ? PR.month : '';
-  const pLabel = PR.mode === 'year' ? PR.year + '年' : PR.mode === 'month' ? PR.month.replace('-', '年') + '月' : '全期間';
-  const d = await run(() => api('costSummary', { includeDone: !!S.incDone, period })); if (!d) return;
+  // 決算期(「設定」シートの決算月。初期値6月 → 7月始まり)
+  const EM = Math.min(12, Math.max(1, Number((S.settings || {})['決算月(1〜12)']) || 6)), SM = EM % 12 + 1;
+  const fyStart = dt => (dt.getMonth() + 1 >= SM ? dt.getFullYear() : dt.getFullYear() - 1);
+  const curFY = fyStart(now);
+  if (PR.fy == null) PR.fy = curFY;
+  const fyRange = y => { const f = ym(new Date(y, SM - 1, 1)), t = ym(new Date(y, SM - 1 + 11, 1)); return [f, t]; };
+  // 期数:「設定」シートの「第1期の決算年(西暦)」から数える(令和8年6月期=第28期 → 1999)
+  const FY1 = Number((S.settings || {})['第1期の決算年(西暦)']) || 0;
+  const era = y => (y >= 2019 ? `令和${y - 2018 === 1 ? '元' : y - 2018}年` : `${y}年`);
+  const fyName = y => { const [f, t] = fyRange(y), ey = Number(t.slice(0, 4)), ymj = v => v.replace('-', '年').replace(/年0?/, '年') + '月';
+    return `${FY1 && ey >= FY1 ? `第${ey - FY1 + 1}期 ` : ''}${era(ey)}${EM}月期(${ymj(f)}〜${ymj(t)})`; };
+  const [fyFrom, fyTo] = fyRange(PR.fy);
+  PR.fyRange = PR.mode === 'fy' ? [fyFrom, fyTo] : null;
+  const period = PR.mode === 'year' ? PR.year : PR.mode === 'month' ? PR.month : PR.mode === 'fy' ? fyFrom + '~' + fyTo : '';
+  const pLabel = PR.mode === 'year' ? PR.year + '年' : PR.mode === 'month' ? PR.month.replace('-', '年') + '月'
+    : PR.mode === 'fy' ? (PR.fy === curFY ? '今期 ' : PR.fy === curFY - 1 ? '前期 ' : '') + fyName(PR.fy) : '全期間';
+  const d = await run(() => api('costSummary', PR.mode === 'fy' ? { includeDone: true, from: fyFrom, to: fyTo } : { includeDone: !!S.incDone, period })); if (!d) return;
   const t = d.totals, C = d.categories, f = S.billFilter || '';
   const rows = d.rows.filter(r => matchFilter(r, f));
   const years = []; for (let y = now.getFullYear() + 1; y >= 2024; y--) years.push(String(y));
   $('#mview').innerHTML = `<div class="card"><div class="calhead"><h2 style="margin:0">案件別 原価管理表(${esc(pLabel)})</h2>
       ${period ? '' : `<label style="margin:0;display:flex;gap:6px;align-items:center;color:var(--txt)"><input type="checkbox" id="incd" style="width:auto" ${S.incDone ? 'checked' : ''}>完了案件も表示</label>`}</div>
     <div class="row" style="flex-wrap:wrap;align-items:flex-end;gap:8px;margin:4px 0 10px">
-      <div class="seg" style="margin:0;flex:0 0 auto">${[['all', '全期間'], ['year', '年'], ['month', '月']].map(([k, l]) => `<button data-pm="${k}" class="${PR.mode === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+      <div class="seg" style="margin:0;flex:0 0 auto">${[['all', '全期間'], ['fy', '決算期'], ['year', '年'], ['month', '月']].map(([k, l]) => `<button data-pm="${k}" class="${PR.mode === k ? 'on' : ''}">${l}</button>`).join('')}</div>
       ${PR.mode === 'year' ? `<select id="py" style="width:auto;flex:0 0 auto">${years.map(y => `<option ${y === PR.year ? 'selected' : ''}>${y}</option>`).join('')}</select>` : ''}
       ${PR.mode === 'month' ? `<input type="month" id="pmo" value="${esc(PR.month)}" style="width:auto;flex:0 0 auto">` : ''}
-      ${period ? `<button class="btn out sm" id="pprev" style="flex:0 0 auto">◀ 前の${PR.mode === 'year' ? '年' : '月'}</button><button class="btn out sm" id="pnext" style="flex:0 0 auto">次の${PR.mode === 'year' ? '年' : '月'} ▶</button>` : ''}</div>
+      ${PR.mode === 'fy' ? `<button class="btn ${PR.fy === curFY ? '' : 'out'} sm" id="fycur" style="flex:0 0 auto">今期</button><button class="btn ${PR.fy === curFY - 1 ? '' : 'out'} sm" id="fyprev" style="flex:0 0 auto">前期</button>` : ''}
+      ${period ? `<button class="btn out sm" id="pprev" style="flex:0 0 auto">◀ 前の${PR.mode === 'year' ? '年' : PR.mode === 'fy' ? '期' : '月'}</button><button class="btn out sm" id="pnext" style="flex:0 0 auto">次の${PR.mode === 'year' ? '年' : PR.mode === 'fy' ? '期' : '月'} ▶</button>` : ''}</div>
     ${period ? `<p class="muted" style="margin:0 0 8px">${esc(pLabel)}に動きがあった案件を表示(完了案件も含む)。人工・労務費・経費・原価入力は日付、請求済は発行日、入金済は入金日で集計。売上は 常用=期間内の人工×常用単価/請負=期間内の請求額(税抜)。見積・請求の状況、未請求額・未入金額は今の状態です。</p>` : ''}
     <div class="stats"><div class="stat">売上(税抜)<b>${yen(t.sales)}</b></div><div class="stat">原価合計<b>${yen(t.cost)}</b></div>
       <div class="stat">粗利<b class="${t.gross < 0 ? 'neg' : ''}">${yen(t.gross)}</b></div><div class="stat">粗利率<b>${pct(t.grossRate)}</b></div>
@@ -1270,11 +1285,13 @@ async function moneySummary() {
   if ($('#py')) $('#py').onchange = e => { PR.year = e.target.value; moneySummary(); };
   if ($('#pmo')) $('#pmo').onchange = e => { if (e.target.value) { PR.month = e.target.value; moneySummary(); } };
   const shift = n => {
-    if (PR.mode === 'year') PR.year = String(Number(PR.year) + n);
+    if (PR.mode === 'fy') PR.fy += n;
+    else if (PR.mode === 'year') PR.year = String(Number(PR.year) + n);
     else { const [y, m] = PR.month.split('-').map(Number); PR.month = ym(new Date(y, m - 1 + n, 1)); }
     moneySummary();
   };
   if ($('#pprev')) { $('#pprev').onclick = () => shift(-1); $('#pnext').onclick = () => shift(1); }
+  if ($('#fycur')) { $('#fycur').onclick = () => { PR.fy = curFY; moneySummary(); }; $('#fyprev').onclick = () => { PR.fy = curFY - 1; moneySummary(); }; }
   document.querySelectorAll('[data-f]').forEach(b => b.onclick = () => { S.billFilter = b.dataset.f; moneySummary(); });
   document.querySelectorAll('tr[data-i]').forEach(tr => tr.onclick = () => costDetail(rows[Number(tr.dataset.i)], C));
   $('#ccsv').onclick = () => {
@@ -1285,8 +1302,9 @@ async function moneySummary() {
 }
 
 async function costDetail(r, C) {
-  const per = S.costPer && S.costPer.mode !== 'all' ? (S.costPer.mode === 'year' ? S.costPer.year : S.costPer.month) : '';
-  const costs = (await run(() => api('costs', { siteId: r.siteId })) || []).filter(c => !per || String(c.date || '').indexOf(per) === 0);
+  const CP = S.costPer || {}, rg = CP.mode === 'fy' && CP.fyRange ? CP.fyRange : null;
+  const per = !rg && CP.mode && CP.mode !== 'all' ? (CP.mode === 'year' ? CP.year : CP.month) : '';
+  const costs = (await run(() => api('costs', { siteId: r.siteId })) || []).filter(c => { const dd = String(c.date || ''); return rg ? dd.slice(0, 7) >= rg[0] && dd.slice(0, 7) <= rg[1] : !per || dd.indexOf(per) === 0; });
   const jouyou = r.contractType === '常用';
   modal(`<h2>${esc(r.name)} の原価内訳 <span class="pill ${jouyou ? 'tmp' : ''}">${esc(r.contractType)}</span></h2>
     ${jouyou ? `<div class="card" style="background:var(--g2)"><b>常用の請求書を作る</b>
