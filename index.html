@@ -1387,8 +1387,8 @@ function docForm(type, d) {
       <div id="d_prog" style="display:${d.billType === '出来高' ? 'block' : 'none'};background:var(--g2);border-radius:10px;padding:10px 12px">
         <div id="d_pinfo" class="muted">案件を選ぶと契約金額と前回までの請求が出ます</div>
         <div class="row" style="align-items:flex-end"><div><label>今回までの累計出来高(%)</label><input type="number" id="d_pg" min="0" max="100" step="0.1" value="${esc(d.progress || '')}" placeholder="例:60"></div>
-          <div><label>今回の請求額(税抜)</label><div id="d_pamt" style="font-size:20px;font-weight:700;padding:6px 0">—</div></div></div>
-        <p class="muted" style="margin:4px 0 0;font-size:12px">今回の請求額 = 契約金額 × 累計出来高% − 前回までの請求額。出来高を入れると明細が自動で作られます(あとから明細の文言は直せます)。</p></div>`}
+          <div><label>今回の請求額(税抜)</label><input type="number" id="d_pamt" inputmode="numeric" placeholder="例:300000" style="font-weight:700"></div></div>
+        <p class="muted" style="margin:4px 0 0;font-size:12px">累計出来高(%)か今回の請求額のどちらかを入れると、もう一方が自動で計算されます(明細の「今回出来高請求」の単価を直しても%が変わります)。今回の請求額 = 契約金額 × 累計出来高% − 前回までの請求額。</p></div>`}
     <h3>明細</h3><div class="scroll"><table class="items"><tr><th>品名・工事内容</th><th style="width:70px">数量</th><th style="width:60px">単位</th><th style="width:110px">単価(税抜)</th><th class="n" style="width:100px">金額</th><th></th></tr>
       <tbody id="d_items"></tbody></table></div>
     <button class="btn out sm" id="d_add">+ 行を追加</button>
@@ -1411,37 +1411,53 @@ function docForm(type, d) {
   tb.onclick = e => { if (e.target.classList.contains('i_x')) { e.target.closest('tr').remove(); recalc(); } };
   $('#d_add').onclick = () => { tb.insertAdjacentHTML('beforeend', rowHtml({ qty: 1, unit: '', price: '' })); recalc(); };
   recalc();
-  // ===== 出来高請求 =====
+  // ===== 出来高請求(累計出来高% ⇔ 今回の請求額 どちらからでも計算) =====
   let PI = null, billType = d.billType === '出来高' ? '出来高' : '';
-  const pAmt = () => { const pg = Number($('#d_pg').value) || 0; return PI ? Math.floor(PI.contract * pg / 100) - PI.billed : 0; };
+  const r2 = v => Math.round(v * 100) / 100;
+  const pAmt = () => Number($('#d_pamt').value) || 0;
   const pShow = () => {
     if (!$('#d_pinfo')) return;
-    if (!PI) { $('#d_pinfo').textContent = '案件を選ぶと契約金額と前回までの請求が出ます'; $('#d_pamt').textContent = '—'; return; }
+    if (!PI) { $('#d_pinfo').textContent = '案件を選ぶと契約金額と前回までの請求が出ます'; return; }
     $('#d_pinfo').innerHTML = PI.contract ? `契約金額 <b>${yen(PI.contract)}</b>(${esc(PI.basis)}) / 前回までの請求 <b>${yen(PI.billed)}</b>(${PI.count}件・累計出来高 ${PI.prevProgress}%)`
       : '<span class="neg">この案件は請負契約金額も受注見積もありません。案件の編集で「請負契約金額」を入れてください。</span>';
-    const a = pAmt(); $('#d_pamt').innerHTML = $('#d_pg').value ? `<span class="${a <= 0 ? 'neg' : ''}">${yen(a)}</span>` : '—';
+    $('#d_pamt').style.color = $('#d_pamt').value && pAmt() <= 0 ? 'var(--red)' : '';
   };
-  const pFill = () => {
-    const pg = Number($('#d_pg').value) || 0; if (!PI || !PI.contract || !pg) return;
-    const cum = Math.floor(PI.contract * pg / 100), a = cum - PI.billed;
-    const lines = [
-      { name: `請負契約金額　${num(PI.contract)}円`, qty: '', unit: '', price: '' },
-      { name: `累計出来高　${pg}%(出来高金額 ${num(cum)}円)`, qty: '', unit: '', price: '' },
-      { name: `前回までの請求額　${num(PI.billed)}円(累計出来高 ${PI.prevProgress}%)`, qty: '', unit: '', price: '' },
-      { name: `今回出来高請求(${PI.prevProgress}% → ${pg}%)`, qty: 1, unit: '式', price: a },
-    ];
-    tb.innerHTML = lines.map(rowHtml).join(''); recalc();
+  // 明細を作る(すでに出来高の明細があるときは、入力中のカーソルが飛ばないよう中身だけ書き換える)
+  const pFill = (pg, a) => {
+    if (!PI || !PI.contract || !pg) return;
+    const cum = PI.billed + a;
+    const names = [`請負契約金額　${num(PI.contract)}円`, `累計出来高　${pg}%(出来高金額 ${num(cum)}円)`, `前回までの請求額　${num(PI.billed)}円(累計出来高 ${PI.prevProgress}%)`, `今回出来高請求(${PI.prevProgress}% → ${pg}%)`];
+    const rows = tb.querySelectorAll('tr[data-k]');
+    if (rows.length === 4) {
+      rows.forEach((tr, k) => { tr.querySelector('.i_n').value = names[k]; });
+      const pi = rows[3].querySelector('.i_p'); if (document.activeElement !== pi) pi.value = a;
+    } else {
+      tb.innerHTML = names.map((n, k) => rowHtml(k < 3 ? { name: n, qty: '', unit: '', price: '' } : { name: n, qty: 1, unit: '式', price: a })).join('');
+      tb.querySelectorAll('tr').forEach((tr, k) => { tr.dataset.k = k; });
+    }
+    recalc();
   };
+  const fromPct = () => { if (!PI || !PI.contract) return; const pg = Number($('#d_pg').value) || 0; const a = Math.floor(PI.contract * pg / 100) - PI.billed; $('#d_pamt').value = pg ? a : ''; pShow(); pFill(pg, a); };
+  const fromAmt = v => { if (!PI || !PI.contract) return; const a = Number(v) || 0; const pg = r2((PI.billed + a) / PI.contract * 100); $('#d_pg').value = a ? pg : ''; pShow(); pFill(pg, a); };
   const pLoad = async () => {
     PI = null; pShow();
     if (billType !== '出来高' || !$('#d_site').value) return;
     PI = await run(() => api('progressInfo', { siteId: $('#d_site').value, id: d.id || '' })); pShow();
+    // 編集のとき:保存済みの明細の「今回出来高請求」の行を出来高の行として扱う
+    if (PI && d.id) { const trs = [...tb.querySelectorAll('tr')]; if (trs.length === 4 && /^今回出来高請求/.test(trs[3].querySelector('.i_n').value)) { trs.forEach((tr, k) => { tr.dataset.k = k; }); $('#d_pamt').value = trs[3].querySelector('.i_p').value; } }
   };
   document.querySelectorAll('[data-bm]').forEach(b => b.onclick = () => {
     billType = b.dataset.bm; document.querySelectorAll('[data-bm]').forEach(x => x.classList.toggle('on', x === b));
     $('#d_prog').style.display = billType ? 'block' : 'none'; pLoad();
   });
-  if ($('#d_pg')) { $('#d_pg').oninput = () => { pShow(); pFill(); }; $('#d_site').addEventListener('change', pLoad); if (billType) pLoad(); }
+  if ($('#d_pg')) {
+    $('#d_pg').oninput = fromPct;
+    $('#d_pamt').oninput = e => fromAmt(e.target.value);
+    // 明細の「今回出来高請求」の単価を直接直したとき
+    tb.addEventListener('input', e => { const tr = e.target.closest('tr[data-k="3"]'); if (billType && tr && e.target.classList.contains('i_p')) { $('#d_pamt').value = e.target.value; fromAmt(e.target.value); } });
+    $('#d_site').addEventListener('change', () => { tb.querySelectorAll('tr[data-k]').forEach(tr => tr.removeAttribute('data-k')); pLoad(); });
+    if (billType) pLoad();
+  }
   $('#d_save').onclick = () => run(async () => {
     const p = { type, id: d.id, no: d.id ? undefined : d.importNo, siteId: $('#d_site').value, status: $('#d_st').value, title: $('#d_title').value, issueDate: $('#d_date').value, taxRate: $('#d_tax').value, items: read(), note: $('#d_note').value };
     if (isE) Object.assign(p, { validUntil: $('#d_lim').value, place: $('#d_place').value, period: $('#d_period').value, payTerms: $('#d_pay').value, freight: $('#d_frt').value, packing: $('#d_pack').value }); else {
