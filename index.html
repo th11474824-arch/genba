@@ -1229,43 +1229,64 @@ const matchFilter = (r, f) => !f || (f === '見積中' ? r.estStatus === f : r.b
 
 // 案件別 原価管理表
 async function moneySummary() {
-  const d = await run(() => api('costSummary', { includeDone: !!S.incDone })); if (!d) return;
+  // 表示期間:全期間/年/月
+  const now = new Date(), PR = S.costPer || (S.costPer = { mode: 'all', year: String(now.getFullYear()), month: ym(now) });
+  const period = PR.mode === 'year' ? PR.year : PR.mode === 'month' ? PR.month : '';
+  const pLabel = PR.mode === 'year' ? PR.year + '年' : PR.mode === 'month' ? PR.month.replace('-', '年') + '月' : '全期間';
+  const d = await run(() => api('costSummary', { includeDone: !!S.incDone, period })); if (!d) return;
   const t = d.totals, C = d.categories, f = S.billFilter || '';
   const rows = d.rows.filter(r => matchFilter(r, f));
-  $('#mview').innerHTML = `<div class="card"><div class="calhead"><h2 style="margin:0">案件別 原価管理表</h2>
-      <label style="margin:0;display:flex;gap:6px;align-items:center;color:var(--txt)"><input type="checkbox" id="incd" style="width:auto" ${S.incDone ? 'checked' : ''}>完了案件も表示</label></div>
+  const years = []; for (let y = now.getFullYear() + 1; y >= 2024; y--) years.push(String(y));
+  $('#mview').innerHTML = `<div class="card"><div class="calhead"><h2 style="margin:0">案件別 原価管理表(${esc(pLabel)})</h2>
+      ${period ? '' : `<label style="margin:0;display:flex;gap:6px;align-items:center;color:var(--txt)"><input type="checkbox" id="incd" style="width:auto" ${S.incDone ? 'checked' : ''}>完了案件も表示</label>`}</div>
+    <div class="row" style="flex-wrap:wrap;align-items:flex-end;gap:8px;margin:4px 0 10px">
+      <div class="seg" style="margin:0;flex:0 0 auto">${[['all', '全期間'], ['year', '年'], ['month', '月']].map(([k, l]) => `<button data-pm="${k}" class="${PR.mode === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+      ${PR.mode === 'year' ? `<select id="py" style="width:auto;flex:0 0 auto">${years.map(y => `<option ${y === PR.year ? 'selected' : ''}>${y}</option>`).join('')}</select>` : ''}
+      ${PR.mode === 'month' ? `<input type="month" id="pmo" value="${esc(PR.month)}" style="width:auto;flex:0 0 auto">` : ''}
+      ${period ? `<button class="btn out sm" id="pprev" style="flex:0 0 auto">◀ 前の${PR.mode === 'year' ? '年' : '月'}</button><button class="btn out sm" id="pnext" style="flex:0 0 auto">次の${PR.mode === 'year' ? '年' : '月'} ▶</button>` : ''}</div>
+    ${period ? `<p class="muted" style="margin:0 0 8px">${esc(pLabel)}に動きがあった案件を表示(完了案件も含む)。人工・労務費・経費・原価入力は日付、請求済は発行日、入金済は入金日で集計。売上は 常用=期間内の人工×常用単価/請負=期間内の請求額(税抜)。見積・請求の状況、未請求額・未入金額は今の状態です。</p>` : ''}
     <div class="stats"><div class="stat">売上(税抜)<b>${yen(t.sales)}</b></div><div class="stat">原価合計<b>${yen(t.cost)}</b></div>
       <div class="stat">粗利<b class="${t.gross < 0 ? 'neg' : ''}">${yen(t.gross)}</b></div><div class="stat">粗利率<b>${pct(t.grossRate)}</b></div>
-      <div class="stat">入金済(税込)<b>${yen(t.paid)}</b></div>
+      <div class="stat">入金済(税込)<b>${yen(t.paid)}</b></div>${period ? `<div class="stat">請求済(税抜)<b>${yen(t.billed)}</b></div>` : ''}
       <div class="stat">未請求額(税抜)<b class="${t.unbilled ? 'neg' : ''}">${yen(t.unbilled)}</b></div><div class="stat">未入金額(税込)<b>${yen(t.unpaid)}</b></div></div>
     <h3>状況で絞り込み</h3>
     <div class="seg"><button data-f="" class="${f ? '' : 'on'}">すべて<span class="c">${d.rows.length}</span></button>
       ${FILTERS.map(k => `<button data-f="${k}" class="${f === k ? 'on' : ''}">${k}<span class="c">${d.counts[k]}</span></button>`).join('')}</div>
-    <p class="muted">売上:請負=請負契約金額(未入力なら「受注」見積の合計→請求の合計)/常用=人工×常用単価。原価=労務費(打刻か日報がある日×日当、日報だけの日も自動で計上)+日報の経費+原価入力。行をタップすると内訳が出ます。最終更新 ${esc(d.updatedAt)}</p></div>
+    <p class="muted">売上:請負=請負契約金額(未入力なら「受注」見積の合計→請求の合計)/常用=人工×常用単価。原価=労務費(日報がある日×日当)+日報の経費+原価入力。行をタップすると内訳が出ます。最終更新 ${esc(d.updatedAt)}</p></div>
     <div class="card"><div class="calhead"><h2 style="margin:0">案件一覧(単位:円)</h2><button class="btn out sm" id="ccsv">CSV</button></div><div class="scroll"><table>
     <tr><th>案件</th><th>元請</th><th>区分</th><th>見積</th><th>請求</th><th class="n">未請求額</th><th class="n">未入金額</th><th class="n">人工</th><th class="n">売上</th><th class="n">労務費</th><th class="n">経費</th>${C.map(c => `<th class="n">${c}</th>`).join('')}
       <th class="n">原価計</th><th class="n">粗利</th><th class="n">粗利率</th><th class="n">実行予算</th><th class="n">予算消化</th><th class="n">請求済</th><th class="n">入金済</th></tr>
     ${rows.map((r, i) => `<tr class="click" data-i="${i}"><td><span class="sw" style="background:${esc(r.color)}"></span>${esc(r.name)}</td><td>${esc(r.client)}</td>
       <td><span class="pill ${r.contractType === '常用' ? 'tmp' : ''}">${esc(r.contractType)}</span></td>
-      <td>${pill(r.estStatus)}</td><td>${pill(r.billStatus)}${r.draft ? `<br><span class="muted" style="font-size:11px">未送付${r.draft}件</span>` : ''}</td>
+      <td>${pill(r.estStatus)}</td><td>${pill(r.billStatus)}${r.progress ? `<br><span style="font-size:11px;color:var(--g);font-weight:700">出来高 ${r.progress}%</span>` : ''}${r.draft ? `<br><span class="muted" style="font-size:11px">未送付${r.draft}件</span>` : ''}</td>
       <td class="n ${r.unbilled ? 'neg' : ''}">${num(r.unbilled)}</td><td class="n">${num(r.unpaid)}</td><td class="n">${r.manDays}</td>
       <td class="n">${num(r.sales)}<br><span class="muted" style="font-size:11px">${esc(r.basis)}</span></td><td class="n">${num(r.labor)}</td><td class="n">${num(r.expense)}</td>${C.map(c => `<td class="n">${num(r.cats[c])}</td>`).join('')}
       <td class="n"><b>${num(r.cost)}</b></td><td class="n ${r.gross < 0 ? 'neg' : 'pos'}">${num(r.gross)}</td><td class="n">${pct(r.grossRate)}</td>
       <td class="n">${r.budget ? num(r.budget) : '—'}</td><td class="n ${r.budgetRate > 100 ? 'neg' : ''}">${pct(r.budgetRate)}</td><td class="n">${num(r.billed)}</td><td class="n">${num(r.paid)}</td></tr>`).join('')
       || `<tr><td colspan="${18 + C.length}" class="muted">${f ? '該当する案件はありません' : '案件がありません'}</td></tr>`}
     </table></div><p class="muted">売上・原価・粗利・請求済は税抜、入金済は税込。予算消化が100%を超えると赤字表示。</p></div>`;
-  $('#incd').onchange = e => { S.incDone = e.target.checked; moneySummary(); };
+  if ($('#incd')) $('#incd').onchange = e => { S.incDone = e.target.checked; moneySummary(); };
+  document.querySelectorAll('[data-pm]').forEach(b => b.onclick = () => { PR.mode = b.dataset.pm; moneySummary(); });
+  if ($('#py')) $('#py').onchange = e => { PR.year = e.target.value; moneySummary(); };
+  if ($('#pmo')) $('#pmo').onchange = e => { if (e.target.value) { PR.month = e.target.value; moneySummary(); } };
+  const shift = n => {
+    if (PR.mode === 'year') PR.year = String(Number(PR.year) + n);
+    else { const [y, m] = PR.month.split('-').map(Number); PR.month = ym(new Date(y, m - 1 + n, 1)); }
+    moneySummary();
+  };
+  if ($('#pprev')) { $('#pprev').onclick = () => shift(-1); $('#pnext').onclick = () => shift(1); }
   document.querySelectorAll('[data-f]').forEach(b => b.onclick = () => { S.billFilter = b.dataset.f; moneySummary(); });
   document.querySelectorAll('tr[data-i]').forEach(tr => tr.onclick = () => costDetail(rows[Number(tr.dataset.i)], C));
   $('#ccsv').onclick = () => {
-    TBL.cost = { title: '原価管理表', head: ['案件', '元請', '区分', '見積', '請求', '未請求額', '未入金額', '人工', '売上', '売上の根拠', '労務費', '経費', ...C, '原価計', '粗利', '粗利率(%)', '実行予算', '予算消化(%)', '請求済', '入金済'],
+    TBL.cost = { title: '原価管理表_' + pLabel, head: ['案件', '元請', '区分', '見積', '請求', '未請求額', '未入金額', '人工', '売上', '売上の根拠', '労務費', '経費', ...C, '原価計', '粗利', '粗利率(%)', '実行予算', '予算消化(%)', '請求済', '入金済'],
       rows: rows.map(r => [r.name, r.client, r.contractType, r.estStatus, r.billStatus, r.unbilled, r.unpaid, r.manDays, r.sales, r.basis, r.labor, r.expense, ...C.map(c => r.cats[c]), r.cost, r.gross, nz(r.grossRate, ''), r.budget || '', nz(r.budgetRate, ''), r.billed, r.paid]) };
     csv('cost');
   };
 }
 
 async function costDetail(r, C) {
-  const costs = await run(() => api('costs', { siteId: r.siteId })) || [];
+  const per = S.costPer && S.costPer.mode !== 'all' ? (S.costPer.mode === 'year' ? S.costPer.year : S.costPer.month) : '';
+  const costs = (await run(() => api('costs', { siteId: r.siteId })) || []).filter(c => !per || String(c.date || '').indexOf(per) === 0);
   const jouyou = r.contractType === '常用';
   modal(`<h2>${esc(r.name)} の原価内訳 <span class="pill ${jouyou ? 'tmp' : ''}">${esc(r.contractType)}</span></h2>
     ${jouyou ? `<div class="card" style="background:var(--g2)"><b>常用の請求書を作る</b>
@@ -1277,6 +1298,7 @@ async function costDetail(r, C) {
     <tr><td><b>売上</b>(${esc(r.basis)})</td><td class="n"><b>${num(r.sales)}</b></td></tr>
     ${jouyou ? '' : `<tr><td>請負契約金額</td><td class="n">${r.contractAmount ? num(r.contractAmount) : '未設定'}</td></tr>`}
     <tr><td>受注額(受注した見積・税抜)</td><td class="n">${num(r.contract)}</td></tr>
+    ${r.progress ? `<tr><td>累計出来高(出来高請求)</td><td class="n">${r.progress}%</td></tr>` : ''}
     <tr><td>請求済(税抜)</td><td class="n">${num(r.billed)}</td></tr>
     <tr><td>入金済(税込)</td><td class="n">${num(r.paid)}</td></tr>
     <tr><td>労務費(${r.manDays}人工)</td><td class="n">${num(r.labor)}</td></tr>
@@ -1340,7 +1362,14 @@ function docForm(type, d) {
         <div><label>完成日数(受注後○日間)</label><input id="d_period" value="${esc(d.period || '')}" placeholder="例:10"></div></div>
       <div class="row"><div><label>御支払条件</label><input id="d_pay" value="${esc(d.id ? d.payTerms || '' : '貴社規定支払')}"></div>
         <div><label>運賃</label><input id="d_frt" value="${esc(d.id ? d.freight || '' : '当方負担')}"></div>
-        <div><label>荷造費</label><input id="d_pack" value="${esc(d.id ? d.packing || '' : '当方負担')}"></div></div>` : `<label>入金日(「入金済」のとき。空欄なら今日)</label><input type="date" id="d_paid" value="${esc(d.paidDate || '')}">`}
+        <div><label>荷造費</label><input id="d_pack" value="${esc(d.id ? d.packing || '' : '当方負担')}"></div></div>` : `<label>入金日(「入金済」のとき。空欄なら今日)</label><input type="date" id="d_paid" value="${esc(d.paidDate || '')}">
+      <h3>請求方法</h3>
+      <div class="seg" style="margin-bottom:6px"><button type="button" data-bm="" class="${d.billType === '出来高' ? '' : 'on'}">通常</button><button type="button" data-bm="出来高" class="${d.billType === '出来高' ? 'on' : ''}">出来高</button></div>
+      <div id="d_prog" style="display:${d.billType === '出来高' ? 'block' : 'none'};background:var(--g2);border-radius:10px;padding:10px 12px">
+        <div id="d_pinfo" class="muted">案件を選ぶと契約金額と前回までの請求が出ます</div>
+        <div class="row" style="align-items:flex-end"><div><label>今回までの累計出来高(%)</label><input type="number" id="d_pg" min="0" max="100" step="0.1" value="${esc(d.progress || '')}" placeholder="例:60"></div>
+          <div><label>今回の請求額(税抜)</label><div id="d_pamt" style="font-size:20px;font-weight:700;padding:6px 0">—</div></div></div>
+        <p class="muted" style="margin:4px 0 0;font-size:12px">今回の請求額 = 契約金額 × 累計出来高% − 前回までの請求額。出来高を入れると明細が自動で作られます(あとから明細の文言は直せます)。</p></div>`}
     <h3>明細</h3><div class="scroll"><table class="items"><tr><th>品名・工事内容</th><th style="width:70px">数量</th><th style="width:60px">単位</th><th style="width:110px">単価(税抜)</th><th class="n" style="width:100px">金額</th><th></th></tr>
       <tbody id="d_items"></tbody></table></div>
     <button class="btn out sm" id="d_add">+ 行を追加</button>
@@ -1363,9 +1392,44 @@ function docForm(type, d) {
   tb.onclick = e => { if (e.target.classList.contains('i_x')) { e.target.closest('tr').remove(); recalc(); } };
   $('#d_add').onclick = () => { tb.insertAdjacentHTML('beforeend', rowHtml({ qty: 1, unit: '', price: '' })); recalc(); };
   recalc();
+  // ===== 出来高請求 =====
+  let PI = null, billType = d.billType === '出来高' ? '出来高' : '';
+  const pAmt = () => { const pg = Number($('#d_pg').value) || 0; return PI ? Math.floor(PI.contract * pg / 100) - PI.billed : 0; };
+  const pShow = () => {
+    if (!$('#d_pinfo')) return;
+    if (!PI) { $('#d_pinfo').textContent = '案件を選ぶと契約金額と前回までの請求が出ます'; $('#d_pamt').textContent = '—'; return; }
+    $('#d_pinfo').innerHTML = PI.contract ? `契約金額 <b>${yen(PI.contract)}</b>(${esc(PI.basis)}) / 前回までの請求 <b>${yen(PI.billed)}</b>(${PI.count}件・累計出来高 ${PI.prevProgress}%)`
+      : '<span class="neg">この案件は請負契約金額も受注見積もありません。案件の編集で「請負契約金額」を入れてください。</span>';
+    const a = pAmt(); $('#d_pamt').innerHTML = $('#d_pg').value ? `<span class="${a <= 0 ? 'neg' : ''}">${yen(a)}</span>` : '—';
+  };
+  const pFill = () => {
+    const pg = Number($('#d_pg').value) || 0; if (!PI || !PI.contract || !pg) return;
+    const cum = Math.floor(PI.contract * pg / 100), a = cum - PI.billed;
+    const lines = [
+      { name: `請負契約金額　${num(PI.contract)}円`, qty: '', unit: '', price: '' },
+      { name: `累計出来高　${pg}%(出来高金額 ${num(cum)}円)`, qty: '', unit: '', price: '' },
+      { name: `前回までの請求額　${num(PI.billed)}円(累計出来高 ${PI.prevProgress}%)`, qty: '', unit: '', price: '' },
+      { name: `今回出来高請求(${PI.prevProgress}% → ${pg}%)`, qty: 1, unit: '式', price: a },
+    ];
+    tb.innerHTML = lines.map(rowHtml).join(''); recalc();
+  };
+  const pLoad = async () => {
+    PI = null; pShow();
+    if (billType !== '出来高' || !$('#d_site').value) return;
+    PI = await run(() => api('progressInfo', { siteId: $('#d_site').value, id: d.id || '' })); pShow();
+  };
+  document.querySelectorAll('[data-bm]').forEach(b => b.onclick = () => {
+    billType = b.dataset.bm; document.querySelectorAll('[data-bm]').forEach(x => x.classList.toggle('on', x === b));
+    $('#d_prog').style.display = billType ? 'block' : 'none'; pLoad();
+  });
+  if ($('#d_pg')) { $('#d_pg').oninput = () => { pShow(); pFill(); }; $('#d_site').addEventListener('change', pLoad); if (billType) pLoad(); }
   $('#d_save').onclick = () => run(async () => {
     const p = { type, id: d.id, siteId: $('#d_site').value, status: $('#d_st').value, title: $('#d_title').value, issueDate: $('#d_date').value, taxRate: $('#d_tax').value, items: read(), note: $('#d_note').value };
-    if (isE) Object.assign(p, { validUntil: $('#d_lim').value, place: $('#d_place').value, period: $('#d_period').value, payTerms: $('#d_pay').value, freight: $('#d_frt').value, packing: $('#d_pack').value }); else { p.dueDate = $('#d_lim').value; p.paidDate = $('#d_paid').value; }
+    if (isE) Object.assign(p, { validUntil: $('#d_lim').value, place: $('#d_place').value, period: $('#d_period').value, payTerms: $('#d_pay').value, freight: $('#d_frt').value, packing: $('#d_pack').value }); else {
+      p.dueDate = $('#d_lim').value; p.paidDate = $('#d_paid').value; p.billType = billType; p.progress = billType ? $('#d_pg').value : '';
+      if (billType && !(Number(p.progress) > 0)) throw new Error('累計出来高(%)を入れてください');
+      if (billType && PI && pAmt() <= 0 && !confirm('今回の請求額が0円以下です。このまま保存しますか?')) return;
+    }
     const saved = await api('saveDoc', p); closeModal(); toast(`${saved.no} を保存しました`); viewMoney();
   });
   if ($('#d_del')) $('#d_del').onclick = () => { if (confirm('この書類を削除しますか?')) run(async () => { await api('deleteDoc', { type, id: d.id }); closeModal(); toast('削除しました'); viewMoney(); }); };
@@ -1499,7 +1563,8 @@ async function printInvoice(d) {
   const R = 'class="r"', jd = s => { const p = String(s || '').split('-'); return p.length === 3 ? `${p[0]}年${Number(p[1])}月${Number(p[2])}日` : ''; };
   const items = [{ name: d.title, head: true }].concat(d.items);
   const ITEM_ROWS = Math.max(11, items.length), AFTER_ROWS = 7;
-  const row = i => `<tr><td class="nm${i.head ? ' hd' : ''}">${esc(i.name || '')}</td><td ${R}>${i.head ? '' : esc(i.qty)}</td><td class="c">${i.head ? '' : esc(i.unit)}</td><td ${R}>${i.head ? '' : num(i.price)}</td><td ${R}>${i.head ? '' : num(i.amount)}</td></tr>`;
+  // 単価・金額のない行(出来高の内訳などの説明行)は数字を空欄にする
+  const row = i => { const h = i.head || (!Number(i.price) && !Number(i.amount)); return `<tr><td class="nm${i.head ? ' hd' : ''}">${esc(i.name || '')}</td><td ${R}>${h ? '' : esc(i.qty)}</td><td class="c">${h ? '' : esc(i.unit)}</td><td ${R}>${h ? '' : num(i.price)}</td><td ${R}>${h ? '' : num(i.amount)}</td></tr>`; };
   const blank = n => '<tr><td class="nm">&nbsp;</td><td></td><td></td><td></td><td></td></tr>'.repeat(Math.max(0, n));
   const br = s => esc(s || '').replace(/\n/g, '<br>');
   $('#print').innerHTML = `<style>
